@@ -13,6 +13,8 @@
     "vite-plugin-pwa": "^1.2.0"
   },
   "dependencies": {
-    "@mlc-ai/web-llm": "^0.2.80"
+    "@mlc-ai/web-llm": "^0.2.80",
+    "dexie": "^4.2.1",
+    "lucide": "^0.562.0"
   }
 }
