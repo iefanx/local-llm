@@ -86,6 +86,7 @@ html {
 
 #model-selection {
   flex: 1;
+  min-width: 0;
   background: #0a0a0a;
   border: 1px solid #222;
   border-radius: 8px;
@@ -351,7 +352,168 @@ html {
   border-radius: 16px;
   color: #ccc;
   font-size: 14px;
-  line-height: 1.4;
+  line-height: 1.5;
+}
+
+/* Markdown Styles */
+.response-content h1,
+.response-content h2,
+.response-content h3,
+.response-content h4,
+.response-content h5,
+.response-content h6 {
+  margin: 16px 0 8px 0;
+  color: #fff;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.response-content h1 { font-size: 1.5em; }
+.response-content h2 { font-size: 1.3em; }
+.response-content h3 { font-size: 1.15em; }
+.response-content h4 { font-size: 1em; }
+
+.response-content p {
+  margin: 8px 0;
+}
+
+.response-content p:first-child {
+  margin-top: 0;
+}
+
+.response-content p:last-child {
+  margin-bottom: 0;
+}
+
+.response-content strong {
+  color: #fff;
+  font-weight: 600;
+}
+
+.response-content em {
+  font-style: italic;
+  color: #bbb;
+}
+
+.response-content a {
+  color: #6ea8fe;
+  text-decoration: none;
+}
+
+.response-content a:hover {
+  text-decoration: underline;
+}
+
+.response-content ul,
+.response-content ol {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+
+.response-content li {
+  margin: 4px 0;
+}
+
+.response-content blockquote {
+  margin: 12px 0;
+  padding: 8px 16px;
+  border-left: 3px solid #444;
+  background: #0a0a0a;
+  border-radius: 0 8px 8px 0;
+  color: #999;
+}
+
+.response-content hr {
+  border: none;
+  border-top: 1px solid #333;
+  margin: 16px 0;
+}
+
+/* Code Styles */
+.response-content code {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Courier New', monospace;
+  font-size: 0.9em;
+}
+
+.response-content :not(pre) > code {
+  background: #1a1a1a;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #e06c75;
+  border: 1px solid #2a2a2a;
+}
+
+.response-content pre {
+  margin: 12px 0;
+  padding: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0d1117;
+  border: 1px solid #2a2a2a;
+}
+
+.response-content pre code {
+  display: block;
+  padding: 14px 16px;
+  overflow-x: auto;
+  line-height: 1.5;
+}
+
+.response-content pre code::-webkit-scrollbar {
+  height: 6px;
+}
+
+.response-content pre code::-webkit-scrollbar-track {
+  background: #0a0a0a;
+}
+
+.response-content pre code::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+
+/* Table Styles */
+.response-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 13px;
+}
+
+.response-content th,
+.response-content td {
+  padding: 10px 12px;
+  border: 1px solid #2a2a2a;
+  text-align: left;
+}
+
+.response-content th {
+  background: #1a1a1a;
+  color: #fff;
+  font-weight: 600;
+}
+
+.response-content tr:nth-child(even) {
+  background: #0a0a0a;
+}
+
+/* KaTeX Math Styles */
+.response-content .katex-display {
+  margin: 16px 0;
+  padding: 12px;
+  background: #0a0a0a;
+  border-radius: 8px;
+  overflow-x: auto;
+  border: 1px solid #1a1a1a;
+}
+
+.response-content .katex {
+  font-size: 1.05em;
+  color: #e0e0e0;
+}
+
+.response-content .katex-display > .katex {
+  text-align: center;
 }
 
 /* Chat input container */

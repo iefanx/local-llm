@@ -1,7 +1,12 @@
 import { CreateWebWorkerMLCEngine, prebuiltAppConfig } from "@mlc-ai/web-llm";
 import { registerSW } from 'virtual:pwa-register'
 import { createIcons, Settings, Download, ArrowUp, Brain, ChevronDown } from 'lucide';
+import { marked } from 'marked';
+import hljs from 'highlight.js';
+import katex from 'katex';
 
+import 'highlight.js/styles/github-dark.css';
+import 'katex/dist/katex.min.css';
 import './style.css'
 
 // Initialize Lucide icons
@@ -14,6 +19,55 @@ createIcons({
     ChevronDown
   }
 });
+
+// Configure marked for markdown rendering
+marked.setOptions({
+  highlight: function(code, lang) {
+    if (lang && hljs.getLanguage(lang)) {
+      try {
+        return hljs.highlight(code, { language: lang }).value;
+      } catch (e) {
+        console.error('Highlight error:', e);
+      }
+    }
+    return hljs.highlightAuto(code).value;
+  },
+  breaks: true,
+  gfm: true
+});
+
+// Render math expressions using KaTeX
+function renderMath(text) {
+  // Block math: $$...$$
+  text = text.replace(/\$\$([\s\S]+?)\$\$/g, (match, math) => {
+    try {
+      return katex.renderToString(math.trim(), { displayMode: true, throwOnError: false });
+    } catch (e) {
+      console.error('KaTeX block error:', e);
+      return match;
+    }
+  });
+  
+  // Inline math: $...$
+  text = text.replace(/\$([^$\n]+?)\$/g, (match, math) => {
+    try {
+      return katex.renderToString(math.trim(), { displayMode: false, throwOnError: false });
+    } catch (e) {
+      console.error('KaTeX inline error:', e);
+      return match;
+    }
+  });
+  
+  return text;
+}
+
+// Render markdown with math support
+function renderMarkdown(text) {
+  // First render math (before markdown to preserve LaTeX syntax)
+  const withMath = renderMath(text);
+  // Then render markdown
+  return marked.parse(withMath);
+}
 
 registerSW({
   immediate: true,
@@ -304,10 +358,14 @@ function updateLastMessage(content) {
     }
   }
 
-  // Show response content
+  // Show response content with markdown rendering
   if (responseContent) {
     responseDiv.style.display = "block";
-    responseDiv.textContent = responseContent;
+    responseDiv.innerHTML = renderMarkdown(responseContent);
+    // Apply syntax highlighting to any code blocks
+    responseDiv.querySelectorAll('pre code').forEach((block) => {
+      hljs.highlightElement(block);
+    });
   } else if (isThinking) {
     responseDiv.style.display = "none";
   }
