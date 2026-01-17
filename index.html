@@ -12,6 +12,7 @@
   <title>Aithena</title>
   <!-- Preload critical resources -->
   <link rel="preconnect" href="https://huggingface.co" crossorigin />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
 </head>
 
 <body>
@@ -34,10 +35,14 @@
           <i data-lucide="download"></i>
         </button>
       </div>
+      <input type="file" id="model-file-input" accept=".bin,.task,.litertlm,.lmrt" hidden />
+      <p class="model-hint">[Ready] = ships with app | [Download] = manual download required</p>
       <p id="download-status" class="hidden"></p>
-      <div class="settings-option">
-        <input type="checkbox" id="show-stats" />
-        <label for="show-stats">Show token speed</label>
+      <div class="settings-actions">
+        <button id="clear-chat" class="settings-btn" title="Clear Chat">
+          <i data-lucide="trash-2"></i>
+          <span>Clear Chat</span>
+        </button>
       </div>
     </div>
     <div id="chat-box" class="chat-box"></div>
