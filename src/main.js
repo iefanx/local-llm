@@ -375,9 +375,50 @@ async function initializeLLM(modelFile = null) {
         updateStatus(`Loading cached model (${sizeMB}MB)...`);
         modelPath = URL.createObjectURL(cached.blob);
       } else if (modelConfig.url) {
-        // Download from URL
+        // Download from URL (bundled or remote)
         updateStatus(`Downloading ${modelConfig.name}... This may take a while.`);
-        modelPath = modelConfig.url;
+        
+        try {
+          const response = await fetch(modelConfig.url);
+          if (!response.ok) {
+            throw new Error(`Failed to download model: ${response.status}`);
+          }
+          
+          // Get total size for progress
+          const contentLength = response.headers.get('content-length');
+          const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
+          
+          // Read the stream with progress
+          const reader = response.body.getReader();
+          const chunks = [];
+          let receivedBytes = 0;
+          
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            chunks.push(value);
+            receivedBytes += value.length;
+            
+            if (totalBytes > 0) {
+              const percent = Math.round((receivedBytes / totalBytes) * 100);
+              const mbReceived = (receivedBytes / (1024 * 1024)).toFixed(0);
+              const mbTotal = (totalBytes / (1024 * 1024)).toFixed(0);
+              updateStatus(`Downloading ${modelConfig.name}... ${mbReceived}/${mbTotal}MB (${percent}%)`);
+            }
+          }
+          
+          // Combine chunks into blob
+          const blob = new Blob(chunks);
+          modelPath = URL.createObjectURL(blob);
+          
+          // Cache for next time
+          updateStatus(`Caching model for faster loading next time...`);
+          await cacheModel(selectedModel, blob, modelConfig.name);
+          
+        } catch (fetchError) {
+          throw new Error(`Download failed: ${fetchError.message}`);
+        }
       } else {
         // No URL and not cached - need manual download
         throw new Error('Model not cached. Please select a model file.');
