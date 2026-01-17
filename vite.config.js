@@ -9,12 +9,12 @@ export default defineConfig({
                 enabled: true,
                 suppressWarnings: true
             },
-            includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
+            includeAssets: ['favicon.png', 'apple-touch-icon.png', 'mask-icon.svg'],
             manifest: {
-                name: 'Simple Local Chatbot',
-                short_name: 'LocalChat',
-                description: 'A simple chatbot powered by WebLLM that works offline.',
-                theme_color: '#007bff',
+                name: 'Aithena',
+                short_name: 'Aithena',
+                description: 'A simple chatbot that works offline.',
+                theme_color: '#000000ff',
                 icons: [
                     {
                         src: 'pwa-192x192.png',

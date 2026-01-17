@@ -1,6 +1,7 @@
 import { FilesetResolver, LlmInference } from '@mediapipe/tasks-genai';
 import { registerSW } from 'virtual:pwa-register';
-import { createIcons, Settings, Download, ArrowUp, Brain, ChevronDown, Trash2, Star, Package, FolderOpen } from 'lucide';
+import { createIcons, Settings, Download, ArrowUp, Brain, ChevronDown, Trash2, Star, Package, FolderOpen, Mic, MicOff } from 'lucide';
+import { VoiceService } from './services/voice';
 import { marked } from 'marked';
 import hljs from 'highlight.js';
 import katex from 'katex';
@@ -10,7 +11,10 @@ import 'katex/dist/katex.min.css';
 import './style.css';
 
 // Cache DOM elements for performance
-let $chatBox, $userInput, $sendBtn, $downloadBtn, $downloadStatus, $modelSelection, $chatStats, $downloadSection;
+let $chatBox, $userInput, $sendBtn, $downloadBtn, $downloadStatus, $modelSelection, $chatStats, $downloadSection, $micBtn, $voiceResponseToggle;
+
+// Services
+let voiceService;
 
 // Debounce utility for performance
 function debounce(fn, delay) {
@@ -31,6 +35,9 @@ function initDOMCache() {
   $modelSelection = document.getElementById('model-selection');
   $chatStats = document.getElementById('chat-stats');
   $downloadSection = document.getElementById('download-section');
+  $downloadSection = document.getElementById('download-section');
+  $micBtn = document.getElementById('mic-btn');
+  $voiceResponseToggle = document.getElementById('voice-response-toggle');
 }
 
 // Initialize Lucide icons
@@ -45,7 +52,9 @@ function initIcons() {
       Trash2,
       Star,
       Package,
-      FolderOpen
+      FolderOpen,
+      Mic,
+      MicOff
     }
   });
 }
@@ -58,7 +67,7 @@ marked.setOptions({
 
 // Custom renderer for syntax highlighting
 const renderer = new marked.Renderer();
-renderer.code = function(code, language) {
+renderer.code = function (code, language) {
   const validLang = language && hljs.getLanguage(language);
   const highlighted = validLang
     ? hljs.highlight(code, { language }).value
@@ -70,7 +79,7 @@ marked.use({ renderer });
 // Render math expressions using KaTeX
 function renderMath(text) {
   if (!text) return text;
-  
+
   // Block math: $$...$$ (handle multiline)
   text = text.replace(/\$\$([\s\S]+?)\$\$/g, (match, math) => {
     try {
@@ -84,7 +93,7 @@ function renderMath(text) {
       return `<pre class="math-error">${match}</pre>`;
     }
   });
-  
+
   // Inline math: $...$ (avoid matching currency like $100)
   text = text.replace(/(?<!\\)\$(?!\d)([^$\n]+?)(?<!\\)\$/g, (match, math) => {
     try {
@@ -98,7 +107,7 @@ function renderMath(text) {
       return match;
     }
   });
-  
+
   return text;
 }
 
@@ -134,10 +143,10 @@ const MODEL_CACHE_VERSION = 1;
 function openModelCache() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(MODEL_CACHE_DB, MODEL_CACHE_VERSION);
-    
+
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve(request.result);
-    
+
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
       if (!db.objectStoreNames.contains(MODEL_CACHE_STORE)) {
@@ -155,7 +164,7 @@ async function getCachedModel(modelId) {
       const tx = db.transaction(MODEL_CACHE_STORE, 'readonly');
       const store = tx.objectStore(MODEL_CACHE_STORE);
       const request = store.get(modelId);
-      
+
       request.onerror = () => reject(request.error);
       request.onsuccess = () => resolve(request.result);
     });
@@ -178,7 +187,7 @@ async function cacheModel(modelId, modelBlob, fileName) {
         fileName: fileName,
         cachedAt: Date.now()
       });
-      
+
       request.onerror = () => reject(request.error);
       request.onsuccess = () => resolve();
     });
@@ -195,7 +204,7 @@ async function getCacheInfo() {
       const tx = db.transaction(MODEL_CACHE_STORE, 'readonly');
       const store = tx.objectStore(MODEL_CACHE_STORE);
       const request = store.getAll();
-      
+
       request.onsuccess = () => {
         const models = request.result || [];
         const totalSize = models.reduce((sum, m) => sum + (m.blob?.size || 0), 0);
@@ -271,7 +280,9 @@ For simple questions, respond directly without the think tags.`;
 
 const STORAGE_KEY = 'selectedModel';
 const MODEL_LOADED_KEY = 'modelLoaded';
+const VOICE_RESPONSE_KEY = 'voiceResponseEnabled';
 let selectedModel = localStorage.getItem(STORAGE_KEY) || 'gemma-3-1b-bundled';
+let voiceResponseEnabled = localStorage.getItem(VOICE_RESPONSE_KEY) !== 'false'; // Default true
 
 // LLM instance
 let llmInference = null;
@@ -310,15 +321,15 @@ function getModelConfig(modelId) {
 async function initializeLLM(modelFile = null) {
   try {
     await checkWebGPU();
-    
+
     $downloadStatus.classList.remove('hidden');
     $downloadStatus.classList.remove('error');
-    
+
     selectedModel = $modelSelection.value;
     localStorage.setItem(STORAGE_KEY, selectedModel);
-    
+
     const modelConfig = getModelConfig(selectedModel);
-    
+
     // If local model selected but no file provided, prompt for file
     if (modelConfig.local && !modelFile) {
       // Show download instructions for HuggingFace models
@@ -328,15 +339,15 @@ async function initializeLLM(modelFile = null) {
           `2. Accept the Gemma license (requires HuggingFace login)\n` +
           `3. Download the file: ${modelConfig.fileName}\n` +
           `4. Click "Load Model" again and select the downloaded file`;
-        
+
         updateStatus(`Download required: Visit HuggingFace to get ${modelConfig.name}`);
-        
+
         // Open HuggingFace in new tab
         if (confirm(message + '\n\nOpen HuggingFace now?')) {
           window.open(modelConfig.downloadUrl, '_blank');
         }
       }
-      
+
       const fileInput = document.getElementById('model-file-input');
       if (fileInput) {
         fileInput.click();
@@ -344,31 +355,31 @@ async function initializeLLM(modelFile = null) {
         return;
       }
     }
-    
+
     updateStatus(`Initializing MediaPipe...`);
-    
+
     // Initialize FilesetResolver
     const genai = await FilesetResolver.forGenAiTasks(
       'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@latest/wasm'
     );
-    
+
     let modelPath;
     let modelBlob = null;
-    
+
     if (modelFile) {
       // Use local file provided by user
       modelBlob = modelFile;
       modelPath = URL.createObjectURL(modelFile);
       updateStatus(`Loading model: ${modelFile.name}...`);
-      
+
       // Cache the model for next time
       updateStatus(`Caching model for faster loading next time...`);
       await cacheModel(selectedModel, modelFile, modelFile.name);
-      
+
     } else {
       // Check if model is cached
       const cached = await getCachedModel(selectedModel);
-      
+
       if (cached && cached.blob) {
         // Use cached model
         const sizeMB = (cached.blob.size / (1024 * 1024)).toFixed(0);
@@ -377,29 +388,29 @@ async function initializeLLM(modelFile = null) {
       } else if (modelConfig.url) {
         // Download from URL (bundled or remote)
         updateStatus(`Downloading ${modelConfig.name}... This may take a while.`);
-        
+
         try {
           const response = await fetch(modelConfig.url);
           if (!response.ok) {
             throw new Error(`Failed to download model: ${response.status}`);
           }
-          
+
           // Get total size for progress
           const contentLength = response.headers.get('content-length');
           const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
-          
+
           // Read the stream with progress
           const reader = response.body.getReader();
           const chunks = [];
           let receivedBytes = 0;
-          
+
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            
+
             chunks.push(value);
             receivedBytes += value.length;
-            
+
             if (totalBytes > 0) {
               const percent = Math.round((receivedBytes / totalBytes) * 100);
               const mbReceived = (receivedBytes / (1024 * 1024)).toFixed(0);
@@ -407,15 +418,15 @@ async function initializeLLM(modelFile = null) {
               updateStatus(`Downloading ${modelConfig.name}... ${mbReceived}/${mbTotal}MB (${percent}%)`);
             }
           }
-          
+
           // Combine chunks into blob
           const blob = new Blob(chunks);
           modelPath = URL.createObjectURL(blob);
-          
+
           // Cache for next time
           updateStatus(`Caching model for faster loading next time...`);
           await cacheModel(selectedModel, blob, modelConfig.name);
-          
+
         } catch (fetchError) {
           throw new Error(`Download failed: ${fetchError.message}`);
         }
@@ -424,7 +435,7 @@ async function initializeLLM(modelFile = null) {
         throw new Error('Model not cached. Please select a model file.');
       }
     }
-    
+
     // Create LLM instance
     llmInference = await LlmInference.createFromOptions(genai, {
       baseOptions: {
@@ -435,14 +446,14 @@ async function initializeLLM(modelFile = null) {
       temperature: 0.7,
       randomSeed: Math.floor(Math.random() * 1000)
     });
-    
+
     updateStatus('Model loaded successfully! (Cached for next visit)');
     $sendBtn.disabled = false;
     localStorage.setItem(MODEL_LOADED_KEY, selectedModel);
-    
+
     // Reset conversation
     conversationHistory = [];
-    
+
   } catch (err) {
     console.error('Initialization error:', err);
     updateStatus(`Error: ${err.message}`, true);
@@ -454,10 +465,10 @@ async function initializeLLM(modelFile = null) {
 // Format conversation for Gemma
 function formatPrompt(userMessage) {
   let prompt = '';
-  
+
   // Add system context at the start
   prompt += `<start_of_turn>user\n${SYSTEM_PROMPT}\n<end_of_turn>\n<start_of_turn>model\nUnderstood. I'm Aithena, ready to help!\n<end_of_turn>\n`;
-  
+
   // Add conversation history (last 10 turns to keep context manageable)
   const recentHistory = conversationHistory.slice(-10);
   for (const msg of recentHistory) {
@@ -467,10 +478,10 @@ function formatPrompt(userMessage) {
       prompt += `<start_of_turn>model\n${msg.content}\n<end_of_turn>\n`;
     }
   }
-  
+
   // Add current user message
   prompt += `<start_of_turn>user\n${userMessage}\n<end_of_turn>\n<start_of_turn>model\n`;
-  
+
   return prompt;
 }
 
@@ -480,30 +491,30 @@ async function generateResponse(userMessage, onUpdate, onFinish, onError) {
     if (!llmInference) {
       throw new Error("Model not loaded. Please load a model first.");
     }
-    
+
     const prompt = formatPrompt(userMessage);
     let fullResponse = '';
-    
+
     // Use streaming callback
     llmInference.generateResponse(prompt, (partialResult, done) => {
       fullResponse += partialResult;
       onUpdate(fullResponse);
-      
+
       if (done) {
         // Clean up response (remove any trailing tags)
         let cleanResponse = fullResponse
           .replace(/<end_of_turn>/g, '')
           .replace(/<start_of_turn>user/g, '')
           .trim();
-        
+
         // Add to history
         conversationHistory.push({ role: 'user', content: userMessage });
         conversationHistory.push({ role: 'assistant', content: cleanResponse });
-        
+
         onFinish(cleanResponse);
       }
     });
-    
+
   } catch (err) {
     onError(err);
   }
@@ -515,7 +526,7 @@ let isGenerating = false;
 function onMessageSend() {
   const input = $userInput.value.trim();
   if (input.length === 0 || isGenerating) return;
-  
+
   isGenerating = true;
   $sendBtn.disabled = true;
 
@@ -534,6 +545,11 @@ function onMessageSend() {
     $sendBtn.disabled = false;
     $userInput.setAttribute('placeholder', 'Type a message...');
     $chatStats.classList.add('hidden');
+
+    // Read response if voice mode is active and setting enabled
+    if (voiceService && !voiceService.isListening && voiceResponseEnabled) {
+      voiceService.speak(finalMessage);
+    }
   };
 
   generateResponse(
@@ -706,7 +722,62 @@ function clearConversation() {
 async function initUI() {
   initDOMCache();
   initIcons();
-  
+
+  // Initialize Voice Service
+  voiceService = new VoiceService();
+
+  voiceService.onResult = (text) => {
+    // Prevent self-listening (if AI is speaking, ignore input)
+    if (voiceService.isSpeaking || isGenerating) return;
+
+    $userInput.value = text;
+    onMessageSend();
+  };
+
+  voiceService.onStateChange = (state) => {
+    if (!$micBtn) return;
+
+    // Safely update icon
+    const updateIcon = (iconName) => {
+      $micBtn.innerHTML = `<i data-lucide="${iconName}"></i>`;
+      createIcons({
+        icons: { Mic, MicOff },
+        nameAttr: 'data-lucide',
+        attrs: { class: 'lucide' }
+      });
+    };
+
+    if (state.isListening) {
+      $micBtn.classList.add('listening');
+      updateIcon('mic-off');
+      $userInput.setAttribute('placeholder', 'Listening...');
+    } else {
+      $micBtn.classList.remove('listening');
+      updateIcon('mic');
+      if (!isGenerating) {
+        $userInput.setAttribute('placeholder', 'Type a message...');
+      }
+    }
+  };
+
+  // Mic button listener
+  if ($micBtn) {
+    $micBtn.addEventListener('click', () => {
+      // If speaking, stop speaking and start listening
+      if (voiceService.isSpeaking) {
+        voiceService.stopSpeaking();
+        voiceService.startListening();
+        return;
+      }
+
+      if (voiceService.isListening) {
+        voiceService.stopListening();
+      } else {
+        voiceService.startListening();
+      }
+    });
+  }
+
   // Populate model selection with descriptions
   const cacheInfo = await getCacheInfo();
   availableModels.forEach((model) => {
@@ -758,6 +829,22 @@ async function initUI() {
     }
   });
 
+  // Voice Response Toggle
+  if ($voiceResponseToggle) {
+    // Initialize state
+    $voiceResponseToggle.checked = voiceResponseEnabled;
+
+    $voiceResponseToggle.addEventListener('change', (e) => {
+      voiceResponseEnabled = e.target.checked;
+      localStorage.setItem(VOICE_RESPONSE_KEY, voiceResponseEnabled);
+
+      // Stop speaking if disabled
+      if (!voiceResponseEnabled && voiceService) {
+        voiceService.stopSpeaking();
+      }
+    });
+  }
+
   // Settings toggle
   document.getElementById('settings-btn').addEventListener('click', () => {
     $downloadSection.classList.toggle('hidden');
@@ -796,24 +883,24 @@ async function autoLoadModel() {
   if (previouslyLoadedModel && previouslyLoadedModel === selectedModel) {
     try {
       await checkWebGPU();
-      
+
       // Check if model is in IndexedDB cache
       const cached = await getCachedModel(selectedModel);
-      
+
       if (!cached || !cached.blob) {
         updateStatus('Model not in cache. Click "Load Model" to reload.');
         return;
       }
-      
+
       const sizeMB = (cached.blob.size / (1024 * 1024)).toFixed(0);
       updateStatus(`Loading cached model (${sizeMB}MB)...`);
-      
+
       const modelPath = URL.createObjectURL(cached.blob);
-      
+
       const genai = await FilesetResolver.forGenAiTasks(
         'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@latest/wasm'
       );
-      
+
       llmInference = await LlmInference.createFromOptions(genai, {
         baseOptions: {
           modelAssetPath: modelPath
@@ -823,10 +910,10 @@ async function autoLoadModel() {
         temperature: 0.7,
         randomSeed: Math.floor(Math.random() * 1000)
       });
-      
+
       $sendBtn.disabled = false;
       updateStatus('Model loaded from cache!');
-      
+
     } catch (err) {
       console.error('Auto-load failed:', err);
       updateStatus(err.message || 'Auto-load failed. Click download to retry.', true);

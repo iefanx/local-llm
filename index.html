@@ -3,13 +3,15 @@
 
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#000000" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="format-detection" content="telephone=no" />
-  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <title>Aithena</title>
   <!-- Preload critical resources -->
   <link rel="preconnect" href="https://huggingface.co" crossorigin />
@@ -20,7 +22,7 @@
   <div class="chat-container">
     <div class="header">
       <div class="logo">
-        <span class="logo-icon">Λ</span>
+        <span class="logo-">Λ</span>
         <span class="logo-text">Aithena</span>
       </div>
       <button id="settings-btn" class="icon-btn">
@@ -39,6 +41,12 @@
       <input type="file" id="model-file-input" accept=".bin,.task,.litertlm,.lmrt" hidden />
       <p class="model-hint">All models require one-time download from HuggingFace</p>
       <p id="download-status" class="hidden"></p>
+
+      <label class="settings-option">
+        <input type="checkbox" id="voice-response-toggle" checked />
+        <span>Enable Voice Responses</span>
+      </label>
+
       <div class="settings-actions">
         <button id="clear-chat" class="settings-btn" title="Clear Chat">
           <i data-lucide="trash-2"></i>
@@ -49,6 +57,9 @@
     <div id="chat-box" class="chat-box"></div>
     <div id="chat-stats" class="chat-stats hidden"></div>
     <div class="chat-input-container">
+      <button id="mic-btn" class="icon-btn mic-btn" title="Voice Mode">
+        <i data-lucide="mic"></i>
+      </button>
       <input type="text" id="user-input" placeholder="Type a message..." />
       <button id="send" disabled title="Send Message">
         <i data-lucide="arrow-up"></i>
