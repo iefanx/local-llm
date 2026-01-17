@@ -1,5 +1,5 @@
 import { CreateWebWorkerMLCEngine, prebuiltAppConfig } from "@mlc-ai/web-llm";
-import { registerSW } from 'virtual:pwa-register'
+import { registerSW } from 'virtual:pwa-register';
 import { createIcons, Settings, Download, ArrowUp, Brain, ChevronDown } from 'lucide';
 import { marked } from 'marked';
 import hljs from 'highlight.js';
@@ -7,53 +7,90 @@ import katex from 'katex';
 
 import 'highlight.js/styles/github-dark.css';
 import 'katex/dist/katex.min.css';
-import './style.css'
+import './style.css';
+
+// Cache DOM elements for performance
+let $chatBox, $userInput, $sendBtn, $downloadBtn, $downloadStatus, $modelSelection, $chatStats, $downloadSection;
+
+// Debounce utility for performance
+function debounce(fn, delay) {
+  let timeoutId;
+  return (...args) => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => fn(...args), delay);
+  };
+}
+
+// Initialize DOM element cache
+function initDOMCache() {
+  $chatBox = document.getElementById('chat-box');
+  $userInput = document.getElementById('user-input');
+  $sendBtn = document.getElementById('send');
+  $downloadBtn = document.getElementById('download');
+  $downloadStatus = document.getElementById('download-status');
+  $modelSelection = document.getElementById('model-selection');
+  $chatStats = document.getElementById('chat-stats');
+  $downloadSection = document.getElementById('download-section');
+}
 
 // Initialize Lucide icons
-createIcons({
-  icons: {
-    Settings,
-    Download,
-    ArrowUp,
-    Brain,
-    ChevronDown
-  }
-});
+function initIcons() {
+  createIcons({
+    icons: {
+      Settings,
+      Download,
+      ArrowUp,
+      Brain,
+      ChevronDown
+    }
+  });
+}
 
 // Configure marked for markdown rendering
 marked.setOptions({
-  highlight: function(code, lang) {
-    if (lang && hljs.getLanguage(lang)) {
-      try {
-        return hljs.highlight(code, { language: lang }).value;
-      } catch (e) {
-        console.error('Highlight error:', e);
-      }
-    }
-    return hljs.highlightAuto(code).value;
-  },
   breaks: true,
   gfm: true
 });
 
+// Custom renderer for syntax highlighting
+const renderer = new marked.Renderer();
+renderer.code = function(code, language) {
+  const validLang = language && hljs.getLanguage(language);
+  const highlighted = validLang
+    ? hljs.highlight(code, { language }).value
+    : hljs.highlightAuto(code).value;
+  return `<pre><code class="hljs ${language || ''}">${highlighted}</code></pre>`;
+};
+marked.use({ renderer });
+
 // Render math expressions using KaTeX
 function renderMath(text) {
-  // Block math: $$...$$
+  if (!text) return text;
+  
+  // Block math: $$...$$ (handle multiline)
   text = text.replace(/\$\$([\s\S]+?)\$\$/g, (match, math) => {
     try {
-      return katex.renderToString(math.trim(), { displayMode: true, throwOnError: false });
+      return katex.renderToString(math.trim(), {
+        displayMode: true,
+        throwOnError: false,
+        strict: false
+      });
     } catch (e) {
-      console.error('KaTeX block error:', e);
-      return match;
+      console.warn('KaTeX block error:', e);
+      return `<pre class="math-error">${match}</pre>`;
     }
   });
   
-  // Inline math: $...$
-  text = text.replace(/\$([^$\n]+?)\$/g, (match, math) => {
+  // Inline math: $...$ (avoid matching currency like $100)
+  text = text.replace(/(?<!\\)\$(?!\d)([^$\n]+?)(?<!\\)\$/g, (match, math) => {
     try {
-      return katex.renderToString(math.trim(), { displayMode: false, throwOnError: false });
+      return katex.renderToString(math.trim(), {
+        displayMode: false,
+        throwOnError: false,
+        strict: false
+      });
     } catch (e) {
-      console.error('KaTeX inline error:', e);
+      console.warn('KaTeX inline error:', e);
       return match;
     }
   });
@@ -63,10 +100,17 @@ function renderMath(text) {
 
 // Render markdown with math support
 function renderMarkdown(text) {
-  // First render math (before markdown to preserve LaTeX syntax)
-  const withMath = renderMath(text);
-  // Then render markdown
-  return marked.parse(withMath);
+  if (!text) return '';
+  try {
+    // First render math (before markdown to preserve LaTeX syntax)
+    const withMath = renderMath(text);
+    // Then render markdown
+    return marked.parse(withMath);
+  } catch (e) {
+    console.error('Markdown render error:', e);
+    // Fallback to escaped text
+    return `<p>${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`;
+  }
 }
 
 registerSW({
@@ -109,24 +153,34 @@ async function checkWebGPU() {
 // Callback function for initializing progress
 function updateEngineInitProgressCallback(report) {
   console.log("initialize", report.progress);
-  document.getElementById("download-status").textContent = report.text;
+  if ($downloadStatus) {
+    $downloadStatus.textContent = report.text;
+  }
+}
+
+// Reusable worker instance
+let worker = null;
+
+function getWorker() {
+  if (!worker) {
+    worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+  }
+  return worker;
 }
 
 async function initializeWebLLMEngine() {
   try {
     await checkWebGPU();
 
-    document.getElementById("download-status").classList.remove("hidden");
-    document.getElementById("download-status").classList.remove("error"); // Clear previous errors
+    $downloadStatus.classList.remove('hidden');
+    $downloadStatus.classList.remove('error');
 
-    selectedModel = document.getElementById("model-selection").value;
-    // Save selected model to localStorage for offline use
+    selectedModel = $modelSelection.value;
     localStorage.setItem(STORAGE_KEY, selectedModel);
 
     if (!engine) {
-      // Create engine using Web Worker
       engine = await CreateWebWorkerMLCEngine(
-        new Worker(new URL('./worker.js', import.meta.url), { type: 'module' }),
+        getWorker(),
         selectedModel,
         { initProgressCallback: updateEngineInitProgressCallback }
       );
@@ -134,19 +188,16 @@ async function initializeWebLLMEngine() {
       await engine.reload(selectedModel);
     }
 
-    document.getElementById("download-status").textContent = "Model loaded successfully!";
-    document.getElementById("send").disabled = false;
-    // Mark that this model has been loaded before
+    $downloadStatus.textContent = 'Model loaded successfully!';
+    $sendBtn.disabled = false;
     localStorage.setItem(MODEL_LOADED_KEY, selectedModel);
 
   } catch (err) {
-    console.error("Initialization error:", err);
-    const statusEl = document.getElementById("download-status");
-    statusEl.classList.remove("hidden");
-    statusEl.classList.add("error");
-    statusEl.innerHTML = `<strong>Error:</strong> ${err.message}`;
-    // Re-enable download button so user can try again
-    document.getElementById("download").disabled = false;
+    console.error('Initialization error:', err);
+    $downloadStatus.classList.remove('hidden');
+    $downloadStatus.classList.add('error');
+    $downloadStatus.innerHTML = `<strong>Error:</strong> ${err.message}`;
+    $downloadBtn.disabled = false;
     throw err;
   }
 }
@@ -177,44 +228,39 @@ async function streamingGenerating(messages, onUpdate, onFinish, onError) {
 }
 
 /*************** UI logic ***************/
+let isGenerating = false;
+
 function onMessageSend() {
-  const input = document.getElementById("user-input").value.trim();
-  const message = {
-    content: input,
-    role: "user"
-  };
-  if (input.length === 0) {
-    return;
-  }
-  document.getElementById("send").disabled = true;
+  const input = $userInput.value.trim();
+  if (input.length === 0 || isGenerating) return;
+  
+  const message = { content: input, role: 'user' };
+  isGenerating = true;
+  $sendBtn.disabled = true;
 
   messages.push(message);
   appendMessage(message);
 
-  document.getElementById("user-input").value = "";
-  document
-    .getElementById("user-input")
-    .setAttribute("placeholder", "Generating...");
+  $userInput.value = '';
+  $userInput.setAttribute('placeholder', 'Generating...');
 
-  const aiMessage = {
-    content: "typing...",
-    role: "assistant"
-  };
+  const aiMessage = { content: 'typing...', role: 'assistant' };
   appendMessage(aiMessage);
 
   const onFinishGenerating = (finalMessage) => {
     updateLastMessage(finalMessage);
-    document.getElementById("send").disabled = false;
-    document.getElementById("user-input").setAttribute("placeholder", "Type a message...");
-    // Only show stats if checkbox is checked
-    const showStats = document.getElementById("show-stats").checked;
-    if (showStats) {
+    isGenerating = false;
+    $sendBtn.disabled = false;
+    $userInput.setAttribute('placeholder', 'Type a message...');
+    
+    const showStats = document.getElementById('show-stats')?.checked;
+    if (showStats && engine) {
       engine.runtimeStatsText().then((statsText) => {
-        document.getElementById("chat-stats").classList.remove("hidden");
-        document.getElementById("chat-stats").textContent = statsText;
+        $chatStats.classList.remove('hidden');
+        $chatStats.textContent = statsText;
       });
     } else {
-      document.getElementById("chat-stats").classList.add("hidden");
+      $chatStats.classList.add('hidden');
     }
   };
 
@@ -223,34 +269,32 @@ function onMessageSend() {
     updateLastMessage,
     onFinishGenerating,
     (err) => {
-      console.error("Transmission error:", err);
+      console.error('Transmission error:', err);
       updateLastMessage(`Error: ${err.message}`);
-      document.getElementById("send").disabled = false;
-      document.getElementById("user-input").setAttribute("placeholder", "Type a message...");
+      isGenerating = false;
+      $sendBtn.disabled = false;
+      $userInput.setAttribute('placeholder', 'Type a message...');
     }
   );
 }
 
 function appendMessage(message) {
-  const chatBox = document.getElementById("chat-box");
-  const container = document.createElement("div");
-  container.classList.add("message-container");
+  const container = document.createElement('div');
+  container.classList.add('message-container');
 
-  if (message.role === "user") {
-    container.classList.add("user");
-    const newMessage = document.createElement("div");
-    newMessage.classList.add("message");
+  if (message.role === 'user') {
+    container.classList.add('user');
+    const newMessage = document.createElement('div');
+    newMessage.classList.add('message');
     newMessage.textContent = message.content;
     container.appendChild(newMessage);
   } else {
-    container.classList.add("assistant");
-    // Create thinking wrapper structure for assistant messages
-    const wrapper = document.createElement("div");
-    wrapper.classList.add("thinking-wrapper");
+    container.classList.add('assistant');
+    const wrapper = document.createElement('div');
+    wrapper.classList.add('thinking-wrapper');
 
-    // Thinking indicator (shown while streaming)
-    const indicator = document.createElement("div");
-    indicator.classList.add("thinking-indicator");
+    const indicator = document.createElement('div');
+    indicator.classList.add('thinking-indicator');
     indicator.innerHTML = `
       <div class="thinking-dots">
         <span></span>
@@ -261,17 +305,23 @@ function appendMessage(message) {
     `;
     wrapper.appendChild(indicator);
 
-    // Response content
-    const responseDiv = document.createElement("div");
-    responseDiv.classList.add("response-content");
-    responseDiv.style.display = "none";
+    const responseDiv = document.createElement('div');
+    responseDiv.classList.add('response-content');
+    responseDiv.style.display = 'none';
     wrapper.appendChild(responseDiv);
 
     container.appendChild(wrapper);
   }
 
-  chatBox.appendChild(container);
-  chatBox.scrollTop = chatBox.scrollHeight;
+  $chatBox.appendChild(container);
+  scrollToBottom();
+}
+
+// Smooth scroll to bottom with requestAnimationFrame
+function scrollToBottom() {
+  requestAnimationFrame(() => {
+    $chatBox.scrollTop = $chatBox.scrollHeight;
+  });
 }
 
 // Parse content with <think> tags
@@ -297,141 +347,164 @@ function parseThinkingContent(content) {
   return { thinkingContent, responseContent, isThinking };
 }
 
+// Debounced scroll for performance during streaming
+const debouncedScroll = debounce(scrollToBottom, 50);
+
 function updateLastMessage(content) {
-  const containers = document.getElementById("chat-box").querySelectorAll(".message-container.assistant");
+  const containers = $chatBox.querySelectorAll('.message-container.assistant');
   const lastContainer = containers[containers.length - 1];
   if (!lastContainer) return;
 
-  const wrapper = lastContainer.querySelector(".thinking-wrapper");
+  const wrapper = lastContainer.querySelector('.thinking-wrapper');
   if (!wrapper) return;
 
   const { thinkingContent, responseContent, isThinking } = parseThinkingContent(content);
 
-  const indicator = wrapper.querySelector(".thinking-indicator");
-  let thinkingToggle = wrapper.querySelector(".thinking-toggle");
-  let thinkingContentDiv = wrapper.querySelector(".thinking-content");
-  const responseDiv = wrapper.querySelector(".response-content");
+  const indicator = wrapper.querySelector('.thinking-indicator');
+  let thinkingToggle = wrapper.querySelector('.thinking-toggle');
+  let thinkingContentDiv = wrapper.querySelector('.thinking-content');
+  const responseDiv = wrapper.querySelector('.response-content');
 
-  // If we have thinking content, show the collapsible section
   if (thinkingContent) {
-    // Hide indicator, show toggle if not already created
-    if (indicator) indicator.style.display = "none";
+    if (indicator) indicator.style.display = 'none';
 
     if (!thinkingToggle) {
-      thinkingToggle = document.createElement("div");
-      thinkingToggle.classList.add("thinking-toggle");
-      if (isThinking) thinkingToggle.classList.add("expanded");
+      thinkingToggle = document.createElement('div');
+      thinkingToggle.classList.add('thinking-toggle');
+      if (isThinking) thinkingToggle.classList.add('expanded');
       thinkingToggle.innerHTML = `
         <i data-lucide="brain" class="thinking-icon"></i>
-        <span class="thinking-label">Thinking${isThinking ? "..." : ""}</span>
+        <span class="thinking-label">Thinking${isThinking ? '...' : ''}</span>
         <i data-lucide="chevron-down" class="thinking-chevron"></i>
       `;
-      thinkingToggle.addEventListener("click", () => {
-        thinkingToggle.classList.toggle("expanded");
-        thinkingContentDiv.classList.toggle("expanded");
+      thinkingToggle.addEventListener('click', () => {
+        thinkingToggle.classList.toggle('expanded');
+        thinkingContentDiv.classList.toggle('expanded');
       });
       wrapper.insertBefore(thinkingToggle, indicator);
 
-      thinkingContentDiv = document.createElement("div");
-      thinkingContentDiv.classList.add("thinking-content");
-      if (isThinking) thinkingContentDiv.classList.add("expanded");
+      thinkingContentDiv = document.createElement('div');
+      thinkingContentDiv.classList.add('thinking-content');
+      if (isThinking) thinkingContentDiv.classList.add('expanded');
       wrapper.insertBefore(thinkingContentDiv, indicator);
 
-      // Re-render Lucide icons
-      createIcons({
-        icons: { Brain, ChevronDown }
-      });
+      createIcons({ icons: { Brain, ChevronDown } });
     }
 
     thinkingContentDiv.textContent = thinkingContent;
 
-    // Update label
-    const label = thinkingToggle.querySelector(".thinking-label");
+    const label = thinkingToggle.querySelector('.thinking-label');
     if (label) {
-      label.textContent = isThinking ? "Thinking..." : "Thought process";
+      label.textContent = isThinking ? 'Thinking...' : 'Thought process';
     }
 
-    // Auto-collapse when response arrives
     if (!isThinking && responseContent) {
-      thinkingToggle.classList.remove("expanded");
-      thinkingContentDiv.classList.remove("expanded");
+      thinkingToggle.classList.remove('expanded');
+      thinkingContentDiv.classList.remove('expanded');
     }
   }
 
-  // Show response content with markdown rendering
   if (responseContent) {
-    responseDiv.style.display = "block";
+    responseDiv.style.display = 'block';
     responseDiv.innerHTML = renderMarkdown(responseContent);
-    // Apply syntax highlighting to any code blocks
-    responseDiv.querySelectorAll('pre code').forEach((block) => {
-      hljs.highlightElement(block);
-    });
   } else if (isThinking) {
-    responseDiv.style.display = "none";
+    responseDiv.style.display = 'none';
   }
 
-  // Scroll to bottom
-  document.getElementById("chat-box").scrollTop = document.getElementById("chat-box").scrollHeight;
+  debouncedScroll();
 }
 
 /*************** UI binding ***************/
-availableModels.forEach((modelId) => {
-  const option = document.createElement("option");
-  option.value = modelId;
-  option.textContent = modelId;
-  document.getElementById("model-selection").appendChild(option);
-});
-document.getElementById("model-selection").value = selectedModel;
-
-document.getElementById("download").addEventListener("click", function () {
-  const btn = document.getElementById("download");
-  btn.disabled = true;
-  initializeWebLLMEngine().catch(() => {
-    btn.disabled = false;
+function initUI() {
+  // Cache DOM elements
+  initDOMCache();
+  
+  // Initialize icons
+  initIcons();
+  
+  // Populate model selection
+  availableModels.forEach((modelId) => {
+    const option = document.createElement('option');
+    option.value = modelId;
+    option.textContent = modelId;
+    $modelSelection.appendChild(option);
   });
-});
+  $modelSelection.value = selectedModel;
 
-document.getElementById("send").addEventListener("click", function () {
-  onMessageSend();
-});
+  // Event listeners
+  $downloadBtn.addEventListener('click', () => {
+    $downloadBtn.disabled = true;
+    initializeWebLLMEngine().catch(() => {
+      $downloadBtn.disabled = false;
+    });
+  });
 
-document.getElementById("settings-btn").addEventListener("click", () => {
-  const el = document.getElementById("download-section");
-  if (el) {
-    el.classList.toggle("hidden");
-  }
-});
+  $sendBtn.addEventListener('click', onMessageSend);
 
-// Auto-load previously downloaded model on page refresh
-const previouslyLoadedModel = localStorage.getItem(MODEL_LOADED_KEY);
-if (previouslyLoadedModel && previouslyLoadedModel === selectedModel) {
-  // Check for WebGPU first
-  checkWebGPU().then(() => {
-    // Auto-load the model
-    document.getElementById("download-status").classList.remove("hidden");
-    document.getElementById("download-status").textContent = "Loading cached model...";
-
-    // Ensure UI is ready
-    if (!engine) {
-      CreateWebWorkerMLCEngine(
-        new Worker(new URL('./worker.js', import.meta.url), { type: 'module' }),
-        selectedModel,
-        { initProgressCallback: updateEngineInitProgressCallback }
-      ).then(e => {
-        engine = e;
-        document.getElementById("send").disabled = false;
-        document.getElementById("download-status").textContent = "Model loaded!";
-      }).catch((err) => {
-        console.error("Auto-load failed:", err);
-        document.getElementById("download-status").textContent = "Auto-load failed. Click download to retry.";
-        document.getElementById("download-status").classList.add("error");
-      });
+  // Keyboard support - Enter to send
+  $userInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !$sendBtn.disabled) {
+      e.preventDefault();
+      onMessageSend();
     }
-  }).catch(err => {
-    console.error("WebGPU check failed:", err);
-    const statusEl = document.getElementById("download-status");
-    statusEl.classList.remove("hidden");
-    statusEl.classList.add("error");
-    statusEl.textContent = err.message;
   });
+
+  // Settings toggle
+  document.getElementById('settings-btn').addEventListener('click', () => {
+    $downloadSection.classList.toggle('hidden');
+  });
+
+  // Close settings when clicking outside
+  document.addEventListener('click', (e) => {
+    const settingsBtn = document.getElementById('settings-btn');
+    if (!$downloadSection.contains(e.target) && !settingsBtn.contains(e.target)) {
+      $downloadSection.classList.add('hidden');
+    }
+  });
+
+  // Handle mobile keyboard - adjust viewport
+  if ('visualViewport' in window) {
+    window.visualViewport.addEventListener('resize', () => {
+      document.documentElement.style.setProperty(
+        '--viewport-height',
+        `${window.visualViewport.height}px`
+      );
+    });
+  }
+
+  // Auto-load previously downloaded model
+  autoLoadModel();
+}
+
+async function autoLoadModel() {
+  const previouslyLoadedModel = localStorage.getItem(MODEL_LOADED_KEY);
+  if (previouslyLoadedModel && previouslyLoadedModel === selectedModel) {
+    try {
+      await checkWebGPU();
+      $downloadStatus.classList.remove('hidden');
+      $downloadStatus.textContent = 'Loading cached model...';
+
+      if (!engine) {
+        engine = await CreateWebWorkerMLCEngine(
+          getWorker(),
+          selectedModel,
+          { initProgressCallback: updateEngineInitProgressCallback }
+        );
+        $sendBtn.disabled = false;
+        $downloadStatus.textContent = 'Model loaded!';
+      }
+    } catch (err) {
+      console.error('Auto-load failed:', err);
+      $downloadStatus.classList.remove('hidden');
+      $downloadStatus.classList.add('error');
+      $downloadStatus.textContent = err.message || 'Auto-load failed. Click download to retry.';
+    }
+  }
+}
+
+// Initialize when DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initUI);
+} else {
+  initUI();
 }
