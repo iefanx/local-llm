@@ -258,7 +258,7 @@ const availableModels = [
 let conversationHistory = [];
 
 // System prompt that encourages thinking
-const SYSTEM_PROMPT = `You are Aithena, a helpful AI assistant. When solving complex problems, think step by step.
+const SYSTEM_PROMPT = `You are Aithena, designed by Iefan, a helpful AI assistant. When solving complex problems, think step by step.
 
 For complex reasoning tasks, use this format:
 <think>
