@@ -217,7 +217,7 @@ const availableModels = [
   {
     id: 'gemma-3-1b-bundled',
     name: 'Gemma 3 1B (700MB) [Bundled]',
-    url: '/models/gemma3-1b-it-int4-web.task',
+    url: 'https://media.githubusercontent.com/media/iefanx/local-llm/master/public/models/gemma3-1b-it-int4-web.task',
     size: '700MB',
     bundled: true,
     description: 'Pre-bundled model, downloads automatically'
