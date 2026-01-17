@@ -124,48 +124,126 @@ registerSW({
   }
 });
 
+/*************** Model Caching with IndexedDB ***************/
+
+const MODEL_CACHE_DB = 'aithena-model-cache';
+const MODEL_CACHE_STORE = 'models';
+const MODEL_CACHE_VERSION = 1;
+
+// Open IndexedDB for model caching
+function openModelCache() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(MODEL_CACHE_DB, MODEL_CACHE_VERSION);
+    
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+    
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains(MODEL_CACHE_STORE)) {
+        db.createObjectStore(MODEL_CACHE_STORE, { keyPath: 'id' });
+      }
+    };
+  });
+}
+
+// Get cached model from IndexedDB
+async function getCachedModel(modelId) {
+  try {
+    const db = await openModelCache();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(MODEL_CACHE_STORE, 'readonly');
+      const store = tx.objectStore(MODEL_CACHE_STORE);
+      const request = store.get(modelId);
+      
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+  } catch (e) {
+    console.warn('Cache read error:', e);
+    return null;
+  }
+}
+
+// Save model to IndexedDB cache
+async function cacheModel(modelId, modelBlob, fileName) {
+  try {
+    const db = await openModelCache();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(MODEL_CACHE_STORE, 'readwrite');
+      const store = tx.objectStore(MODEL_CACHE_STORE);
+      const request = store.put({
+        id: modelId,
+        blob: modelBlob,
+        fileName: fileName,
+        cachedAt: Date.now()
+      });
+      
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve();
+    });
+  } catch (e) {
+    console.warn('Cache write error:', e);
+  }
+}
+
+// Get cache size info
+async function getCacheInfo() {
+  try {
+    const db = await openModelCache();
+    return new Promise((resolve) => {
+      const tx = db.transaction(MODEL_CACHE_STORE, 'readonly');
+      const store = tx.objectStore(MODEL_CACHE_STORE);
+      const request = store.getAll();
+      
+      request.onsuccess = () => {
+        const models = request.result || [];
+        const totalSize = models.reduce((sum, m) => sum + (m.blob?.size || 0), 0);
+        const cachedModels = new Set(models.map(m => m.id));
+        resolve({ count: models.length, totalSize, cachedModels });
+      };
+      request.onerror = () => resolve({ count: 0, totalSize: 0, cachedModels: new Set() });
+    });
+  } catch (e) {
+    return { count: 0, totalSize: 0, cachedModels: new Set() };
+  }
+}
+
 /*************** MediaPipe LLM Inference ***************/
 
-// Available models - bundled models load from /models/ folder
+// Available models
 const availableModels = [
-  // BUNDLED: Use GitHub LFS raw URL for reliable CDN delivery
+  // Bundled model - downloads from GitHub LFS (public repo)
   {
     id: 'gemma-3-1b-bundled',
-    name: 'Gemma 3 1B (Bundled)',
-    url: 'https://media.githubusercontent.com/media/iefanx/local-llm/master/public/models/gemma3-1b-it-int4-web.task',
-    size: '668MB',
-    local: false,
+    name: 'Gemma 3 1B (700MB) [Bundled]',
+    url: '/models/gemma3-1b-it-int4-web.task',
+    size: '700MB',
     bundled: true,
-    description: 'Included with app - downloads from GitHub CDN'
+    description: 'Pre-bundled model, downloads automatically'
   },
-  // Public Google Storage models (auto-download)
-  {
-    id: 'gemma-2b',
-    name: 'Gemma 2B (1.3GB)',
-    url: 'https://storage.googleapis.com/mediapipe-assets/gemma-2b-it-gpu-int4.bin',
-    size: '1.3GB',
-    local: false,
-    description: 'Original Gemma, auto-download'
-  },
-  {
-    id: 'gemma-2-2b',
-    name: 'Gemma 2 2B (1.5GB)',
-    url: 'https://storage.googleapis.com/mediapipe-assets/gemma2-2b-it-gpu-int4.bin',
-    size: '1.5GB',
-    local: false,
-    description: 'Improved Gemma 2, auto-download'
-  },
-  // HuggingFace models (require manual download)
+  // HuggingFace download options
   {
     id: 'gemma-3-1b',
-    name: 'Gemma 3 1B (700MB)',
+    name: 'Gemma 3 1B (700MB) [HuggingFace]',
     url: null,
     size: '700MB',
     local: true,
-    description: 'Download from HuggingFace',
+    description: 'Download manually from HuggingFace',
     downloadUrl: 'https://huggingface.co/litert-community/Gemma3-1B-IT/tree/main',
-    fileName: 'gemma3-1b-it-int4-Web.task'
+    fileName: 'gemma3-1b-it-int4-web.task'
   },
+  {
+    id: 'gemma-2-2b',
+    name: 'Gemma 2 2B (2.6GB)',
+    url: null,
+    size: '2.6GB',
+    local: true,
+    description: 'Better quality, larger download',
+    downloadUrl: 'https://huggingface.co/litert-community/Gemma2-2B-IT/tree/main',
+    fileName: 'gemma2-2b-it-int8-web.task.bin'
+  },
+  // Generic local file option
   {
     id: 'local',
     name: 'Load Other Model File',
@@ -275,13 +353,35 @@ async function initializeLLM(modelFile = null) {
     );
     
     let modelPath;
+    let modelBlob = null;
+    
     if (modelFile) {
-      // Use local file
+      // Use local file provided by user
+      modelBlob = modelFile;
       modelPath = URL.createObjectURL(modelFile);
-      updateStatus(`Loading local model: ${modelFile.name}...`);
+      updateStatus(`Loading model: ${modelFile.name}...`);
+      
+      // Cache the model for next time
+      updateStatus(`Caching model for faster loading next time...`);
+      await cacheModel(selectedModel, modelFile, modelFile.name);
+      
     } else {
-      modelPath = modelConfig.url;
-      updateStatus(`Downloading ${modelConfig.name}... This may take a while.`);
+      // Check if model is cached
+      const cached = await getCachedModel(selectedModel);
+      
+      if (cached && cached.blob) {
+        // Use cached model
+        const sizeMB = (cached.blob.size / (1024 * 1024)).toFixed(0);
+        updateStatus(`Loading cached model (${sizeMB}MB)...`);
+        modelPath = URL.createObjectURL(cached.blob);
+      } else if (modelConfig.url) {
+        // Download from URL
+        updateStatus(`Downloading ${modelConfig.name}... This may take a while.`);
+        modelPath = modelConfig.url;
+      } else {
+        // No URL and not cached - need manual download
+        throw new Error('Model not cached. Please select a model file.');
+      }
     }
     
     // Create LLM instance
@@ -295,7 +395,7 @@ async function initializeLLM(modelFile = null) {
       randomSeed: Math.floor(Math.random() * 1000)
     });
     
-    updateStatus('Model loaded successfully!');
+    updateStatus('Model loaded successfully! (Cached for next visit)');
     $sendBtn.disabled = false;
     localStorage.setItem(MODEL_LOADED_KEY, selectedModel);
     
@@ -562,17 +662,21 @@ function clearConversation() {
 }
 
 /*************** UI binding ***************/
-function initUI() {
+async function initUI() {
   initDOMCache();
   initIcons();
   
   // Populate model selection with descriptions
+  const cacheInfo = await getCacheInfo();
   availableModels.forEach((model) => {
     const option = document.createElement('option');
     option.value = model.id;
+    // Check if model is cached
+    const isCached = cacheInfo.cachedModels.has(model.id);
     // Add text indicator for model type
     let indicator = '';
-    if (model.bundled) indicator = ' [Ready]';
+    if (isCached) indicator = ' [Cached]';
+    else if (model.bundled) indicator = ' [Ready]';
     else if (model.downloadUrl) indicator = ' [Download]';
     else if (model.local) indicator = ' [Local]';
     option.textContent = model.name + indicator;
@@ -651,9 +755,19 @@ async function autoLoadModel() {
   if (previouslyLoadedModel && previouslyLoadedModel === selectedModel) {
     try {
       await checkWebGPU();
-      updateStatus('Loading cached model...');
       
-      const modelConfig = getModelConfig(selectedModel);
+      // Check if model is in IndexedDB cache
+      const cached = await getCachedModel(selectedModel);
+      
+      if (!cached || !cached.blob) {
+        updateStatus('Model not in cache. Click "Load Model" to reload.');
+        return;
+      }
+      
+      const sizeMB = (cached.blob.size / (1024 * 1024)).toFixed(0);
+      updateStatus(`Loading cached model (${sizeMB}MB)...`);
+      
+      const modelPath = URL.createObjectURL(cached.blob);
       
       const genai = await FilesetResolver.forGenAiTasks(
         'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@latest/wasm'
@@ -661,7 +775,7 @@ async function autoLoadModel() {
       
       llmInference = await LlmInference.createFromOptions(genai, {
         baseOptions: {
-          modelAssetPath: modelConfig.url
+          modelAssetPath: modelPath
         },
         maxTokens: 2048,
         topK: 40,
@@ -670,7 +784,7 @@ async function autoLoadModel() {
       });
       
       $sendBtn.disabled = false;
-      updateStatus('Model loaded!');
+      updateStatus('Model loaded from cache!');
       
     } catch (err) {
       console.error('Auto-load failed:', err);
