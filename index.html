@@ -42,6 +42,18 @@
       <p class="model-hint">All models require one-time download from HuggingFace</p>
       <p id="download-status" class="hidden"></p>
 
+      <!-- System Prompt Settings -->
+      <div class="system-prompt-section">
+        <button id="sys-prompt-toggle" class="settings-btn small-btn">
+          <i data-lucide="brain-circuit"></i>
+          <span>System Prompt</span>
+          <i data-lucide="chevron-down" class="chevron"></i>
+        </button>
+        <div id="sys-prompt-editor" class="hidden">
+          <textarea id="sys-prompt-input" autocomplete="off" spellcheck="false"></textarea>
+          <button id="sys-prompt-reset" class="reset-link">Reset to Default</button>
+        </div>
+      </div>
       <label class="settings-option">
         <input type="checkbox" id="voice-response-toggle" checked />
         <span>Enable Voice Responses</span>

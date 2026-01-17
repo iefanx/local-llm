@@ -190,9 +190,69 @@ html {
 
 /* Settings actions */
 .settings-actions {
-  margin-top: 14px;
-  padding-top: 14px;
+  margin-top: 10px;
+  padding-top: 10px;
   border-top: 1px solid #1a1a1a;
+}
+
+.system-prompt-section {
+  margin-top: 12px;
+}
+
+.system-prompt-section .settings-btn {
+  justify-content: space-between;
+  margin-bottom: 0;
+}
+
+.system-prompt-section .chevron {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.2s ease;
+}
+
+.system-prompt-section.open .chevron {
+  transform: rotate(180deg);
+}
+
+#sys-prompt-editor {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#sys-prompt-input {
+  width: 100%;
+  background: #000;
+  border: 1px solid #222;
+  border-radius: 8px;
+  color: #ccc;
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 11px;
+  padding: 8px;
+  resize: vertical;
+  min-height: 120px;
+  line-height: 1.4;
+}
+
+#sys-prompt-input:focus {
+  outline: none;
+  border-color: #444;
+}
+
+.reset-link {
+  background: none;
+  border: none;
+  color: #666;
+  font-size: 10px;
+  cursor: pointer;
+  align-self: flex-end;
+  text-decoration: underline;
+  padding: 0;
+}
+
+.reset-link:hover {
+  color: #999;
 }
 
 .settings-btn {
@@ -685,6 +745,7 @@ html {
 
 #user-input {
   flex: 1;
+  min-width: 0;
   background: #0a0a0a;
   border: 1px solid #222;
   border-radius: 20px;
@@ -714,6 +775,7 @@ html {
   height: 44px;
   min-width: 44px;
   min-height: 44px;
+  flex-shrink: 0;
   padding: 0;
   display: flex;
   align-items: center;
@@ -840,6 +902,14 @@ html {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
   }
+
+  #send,
+  .mic-btn {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+    min-height: 38px;
+  }
 }
 
 /* Reduce motion for users who prefer it */
@@ -868,6 +938,7 @@ html {
   background: #111;
   color: #888;
   border-color: #333;
+  flex-shrink: 0;
 }
 
 .mic-btn:hover {

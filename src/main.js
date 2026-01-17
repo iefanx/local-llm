@@ -1,6 +1,6 @@
 import { FilesetResolver, LlmInference } from '@mediapipe/tasks-genai';
 import { registerSW } from 'virtual:pwa-register';
-import { createIcons, Settings, Download, ArrowUp, Brain, ChevronDown, Trash2, Star, Package, FolderOpen, Mic, MicOff } from 'lucide';
+import { createIcons, Settings, Download, ArrowUp, Brain, ChevronDown, Trash2, Star, Package, FolderOpen, Mic, MicOff, BrainCircuit } from 'lucide';
 import { VoiceService } from './services/voice';
 import { marked } from 'marked';
 import hljs from 'highlight.js';
@@ -12,6 +12,7 @@ import './style.css';
 
 // Cache DOM elements for performance
 let $chatBox, $userInput, $sendBtn, $downloadBtn, $downloadStatus, $modelSelection, $chatStats, $downloadSection, $micBtn, $voiceResponseToggle;
+let $sysPromptToggle, $sysPromptEditor, $sysPromptInput, $sysPromptReset;
 
 // Services
 let voiceService;
@@ -38,6 +39,10 @@ function initDOMCache() {
   $downloadSection = document.getElementById('download-section');
   $micBtn = document.getElementById('mic-btn');
   $voiceResponseToggle = document.getElementById('voice-response-toggle');
+  $sysPromptToggle = document.getElementById('sys-prompt-toggle');
+  $sysPromptEditor = document.getElementById('sys-prompt-editor');
+  $sysPromptInput = document.getElementById('sys-prompt-input');
+  $sysPromptReset = document.getElementById('sys-prompt-reset');
 }
 
 // Initialize Lucide icons
@@ -54,7 +59,8 @@ function initIcons() {
       Package,
       FolderOpen,
       Mic,
-      MicOff
+      MicOff,
+      BrainCircuit
     }
   });
 }
@@ -267,7 +273,7 @@ const availableModels = [
 let conversationHistory = [];
 
 // System prompt that encourages thinking
-const SYSTEM_PROMPT = `You are Aithena, designed by Iefan, a helpful AI assistant. When solving complex problems, think step by step.
+const DEFAULT_SYSTEM_PROMPT = `You are Aithena, designed by Iefan, a helpful AI assistant. When solving complex problems, think step by step.
 
 For complex reasoning tasks, use this format:
 <think>
@@ -281,8 +287,11 @@ For simple questions, respond directly without the think tags.`;
 const STORAGE_KEY = 'selectedModel';
 const MODEL_LOADED_KEY = 'modelLoaded';
 const VOICE_RESPONSE_KEY = 'voiceResponseEnabled';
+const SYSTEM_PROMPT_KEY = 'systemPrompt';
+
 let selectedModel = localStorage.getItem(STORAGE_KEY) || 'gemma-3-1b-bundled';
 let voiceResponseEnabled = localStorage.getItem(VOICE_RESPONSE_KEY) !== 'false'; // Default true
+let systemPrompt = localStorage.getItem(SYSTEM_PROMPT_KEY) || DEFAULT_SYSTEM_PROMPT;
 
 // LLM instance
 let llmInference = null;
@@ -467,7 +476,7 @@ function formatPrompt(userMessage) {
   let prompt = '';
 
   // Add system context at the start
-  prompt += `<start_of_turn>user\n${SYSTEM_PROMPT}\n<end_of_turn>\n<start_of_turn>model\nUnderstood. I'm Aithena, ready to help!\n<end_of_turn>\n`;
+  prompt += `<start_of_turn>user\n${systemPrompt}\n<end_of_turn>\n<start_of_turn>model\nUnderstood. I'm Aithena, ready to help!\n<end_of_turn>\n`;
 
   // Add conversation history (last 10 turns to keep context manageable)
   const recentHistory = conversationHistory.slice(-10);
