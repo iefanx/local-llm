@@ -128,15 +128,15 @@ registerSW({
 
 // Available models - bundled models load from /models/ folder
 const availableModels = [
-  // BUNDLED: Ships with the app (place .task/.bin files in public/models/)
+  // BUNDLED: Use GitHub LFS raw URL for reliable CDN delivery
   {
     id: 'gemma-3-1b-bundled',
     name: 'Gemma 3 1B (Bundled)',
-    url: '/models/gemma3-1b-it-int4-web.task',
+    url: 'https://media.githubusercontent.com/media/iefanx/local-llm/master/public/models/gemma3-1b-it-int4-web.task',
     size: '668MB',
     local: false,
     bundled: true,
-    description: 'Included with app - no download needed!'
+    description: 'Included with app - downloads from GitHub CDN'
   },
   // Public Google Storage models (auto-download)
   {
