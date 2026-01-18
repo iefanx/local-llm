@@ -36,7 +36,6 @@ function initDOMCache() {
   $modelSelection = document.getElementById('model-selection');
   $chatStats = document.getElementById('chat-stats');
   $downloadSection = document.getElementById('download-section');
-  $downloadSection = document.getElementById('download-section');
   $micBtn = document.getElementById('mic-btn');
   $voiceResponseToggle = document.getElementById('voice-response-toggle');
   $sysPromptToggle = document.getElementById('sys-prompt-toggle');
@@ -299,11 +298,19 @@ let llmInference = null;
 // Check for WebGPU support
 async function checkWebGPU() {
   if (!navigator.gpu) {
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    if (isSafari) {
+      throw new Error("WebGPU requires Safari 18+ on macOS Sonoma or iOS 18+. Please update your device.");
+    }
     throw new Error("WebGPU is not supported. Please use Chrome 113+, Edge 113+, or Safari 18+ (iOS 18+).");
   }
-  const adapter = await navigator.gpu.requestAdapter();
-  if (!adapter) {
-    throw new Error("WebGPU adapter not available. Your device may not support WebGPU.");
+  try {
+    const adapter = await navigator.gpu.requestAdapter();
+    if (!adapter) {
+      throw new Error("WebGPU adapter not available. Your device may not support WebGPU.");
+    }
+  } catch (e) {
+    throw new Error(`WebGPU initialization failed: ${e.message}. Try restarting your browser.`);
   }
 }
 
@@ -459,6 +466,11 @@ async function initializeLLM(modelFile = null) {
     updateStatus('Model loaded successfully! (Cached for next visit)');
     $sendBtn.disabled = false;
     localStorage.setItem(MODEL_LOADED_KEY, selectedModel);
+
+    // Revoke blob URL to free memory (critical for Safari)
+    if (modelPath && modelPath.startsWith('blob:')) {
+      URL.revokeObjectURL(modelPath);
+    }
 
     // Reset conversation
     conversationHistory = [];
@@ -883,6 +895,39 @@ async function initUI() {
     });
   }
 
+  // System Prompt Settings
+  if ($sysPromptToggle && $sysPromptInput && $sysPromptEditor) {
+    // Initialize textarea with current prompt
+    $sysPromptInput.value = systemPrompt;
+
+    // Toggle editor visibility
+    $sysPromptToggle.addEventListener('click', () => {
+      $sysPromptEditor.classList.toggle('hidden');
+      const isOpen = !$sysPromptEditor.classList.contains('hidden');
+      $sysPromptToggle.closest('.system-prompt-section').classList.toggle('open', isOpen);
+    });
+
+    // Save on change (blur event for better UX)
+    $sysPromptInput.addEventListener('blur', () => {
+      const val = $sysPromptInput.value.trim();
+      systemPrompt = val || DEFAULT_SYSTEM_PROMPT;
+      localStorage.setItem(SYSTEM_PROMPT_KEY, systemPrompt);
+      // Restore default if empty
+      if (!val) {
+        $sysPromptInput.value = systemPrompt;
+      }
+    });
+
+    // Reset button
+    if ($sysPromptReset) {
+      $sysPromptReset.addEventListener('click', () => {
+        systemPrompt = DEFAULT_SYSTEM_PROMPT;
+        $sysPromptInput.value = systemPrompt;
+        localStorage.setItem(SYSTEM_PROMPT_KEY, systemPrompt);
+      });
+    }
+  }
+
   // Auto-load if model was previously loaded
   autoLoadModel();
 }
@@ -926,6 +971,11 @@ async function autoLoadModel() {
     } catch (err) {
       console.error('Auto-load failed:', err);
       updateStatus(err.message || 'Auto-load failed. Click download to retry.', true);
+    } finally {
+      // Revoke blob URL to free memory
+      if (modelPath && modelPath.startsWith('blob:')) {
+        URL.revokeObjectURL(modelPath);
+      }
     }
   }
 }

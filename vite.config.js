@@ -13,8 +13,9 @@ export default defineConfig({
             manifest: {
                 name: 'Aithena',
                 short_name: 'Aithena',
-                description: 'A simple chatbot that works offline.',
-                theme_color: '#000000ff',
+                description: 'A private, on-device AI assistant powered by WebGPU. Works offline after first model download.',
+                theme_color: '#000000',
+                background_color: '#000000',
                 icons: [
                     {
                         src: 'pwa-192x192.png',
