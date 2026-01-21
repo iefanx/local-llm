@@ -1,8 +1,22 @@
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import wasm from 'vite-plugin-wasm'
+import topLevelAwait from 'vite-plugin-top-level-await'
 
 export default defineConfig({
+    server: {
+        headers: {
+            'Cross-Origin-Opener-Policy': 'same-origin',
+            'Cross-Origin-Embedder-Policy': 'credentialless'
+        }
+    },
+    worker: {
+        format: 'es',
+        plugins: () => [wasm(), topLevelAwait()]
+    },
     plugins: [
+        wasm(),
+        topLevelAwait(),
         VitePWA({
             registerType: 'autoUpdate',
             devOptions: {

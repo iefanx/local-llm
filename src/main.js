@@ -1,7 +1,8 @@
 import { FilesetResolver, LlmInference } from '@mediapipe/tasks-genai';
 import { registerSW } from 'virtual:pwa-register';
-import { createIcons, Settings, Download, ArrowUp, Brain, ChevronDown, Trash2, Star, Package, FolderOpen, Mic, MicOff, BrainCircuit } from 'lucide';
+import { createIcons, Settings, Download, ArrowUp, Brain, ChevronDown, Trash2, Star, Package, FolderOpen, Mic, MicOff, BrainCircuit, Upload } from 'lucide';
 import { VoiceService } from './services/voice';
+import { BrainService } from './services/brain';
 import { marked } from 'marked';
 import hljs from 'highlight.js';
 import katex from 'katex';
@@ -16,6 +17,10 @@ let $sysPromptToggle, $sysPromptEditor, $sysPromptInput, $sysPromptReset;
 
 // Services
 let voiceService;
+let brainService;
+
+// Brain DOM elements
+let $brainStatus, $brainProgress, $brainProgressFill, $brainProgressText, $brainMemoryCount, $clearMemoriesBtn, $uploadMemoryBtn, $brainFileInput;
 
 // Debounce utility for performance
 function debounce(fn, delay) {
@@ -42,6 +47,16 @@ function initDOMCache() {
   $sysPromptEditor = document.getElementById('sys-prompt-editor');
   $sysPromptInput = document.getElementById('sys-prompt-input');
   $sysPromptReset = document.getElementById('sys-prompt-reset');
+
+  // Brain elements
+  $brainStatus = document.getElementById('brain-status');
+  $brainProgress = document.getElementById('brain-progress');
+  $brainProgressFill = document.getElementById('brain-progress-fill');
+  $brainProgressText = document.getElementById('brain-progress-text');
+  $brainMemoryCount = document.getElementById('brain-memory-count');
+  $clearMemoriesBtn = document.getElementById('clear-memories');
+  $uploadMemoryBtn = document.getElementById('upload-memory');
+  $brainFileInput = document.getElementById('brain-file-input');
 }
 
 // Initialize Lucide icons
@@ -59,7 +74,8 @@ function initIcons() {
       FolderOpen,
       Mic,
       MicOff,
-      BrainCircuit
+      BrainCircuit,
+      Upload
     }
   });
 }
@@ -484,11 +500,16 @@ async function initializeLLM(modelFile = null) {
 }
 
 // Format conversation for Gemma
-function formatPrompt(userMessage) {
+function formatPrompt(userMessage, memoryContext = '') {
   let prompt = '';
 
   // Add system context at the start
   prompt += `<start_of_turn>user\n${systemPrompt}\n<end_of_turn>\n<start_of_turn>model\nUnderstood. I'm Aithena, ready to help!\n<end_of_turn>\n`;
+
+  // Add memory context if available (RAG)
+  if (memoryContext) {
+    prompt += `<start_of_turn>user\nHere is some relevant context from my memory that may help answer the next question:\n${memoryContext}\n<end_of_turn>\n<start_of_turn>model\nThank you, I'll use this context to help answer your question.\n<end_of_turn>\n`;
+  }
 
   // Add conversation history (last 10 turns to keep context manageable)
   const recentHistory = conversationHistory.slice(-10);
@@ -513,7 +534,23 @@ async function generateResponse(userMessage, onUpdate, onFinish, onError) {
       throw new Error("Model not loaded. Please load a model first.");
     }
 
-    const prompt = formatPrompt(userMessage);
+    // Recall relevant memories from brain (RAG)
+    let memoryContext = '';
+    if (brainService && brainService.isReady && brainService.memoryCount > 0) {
+      try {
+        const memories = await brainService.recall(userMessage, 3);
+        if (memories.length > 0) {
+          memoryContext = memories
+            .map((m, i) => `[Memory ${i + 1}]: ${m.text}`)
+            .join('\n\n');
+          console.log(`[Brain] Using ${memories.length} memories for context`);
+        }
+      } catch (err) {
+        console.warn('[Brain] Memory recall failed:', err);
+      }
+    }
+
+    const prompt = formatPrompt(userMessage, memoryContext);
     let fullResponse = '';
 
     // Use streaming callback
@@ -928,13 +965,139 @@ async function initUI() {
     }
   }
 
+  // Initialize Brain Service
+  initBrain();
+
+  // Clear memories button
+  if ($clearMemoriesBtn) {
+    $clearMemoriesBtn.addEventListener('click', async () => {
+      if (brainService && brainService.isReady && confirm('Clear all memories? This cannot be undone.')) {
+        try {
+          await brainService.clear();
+          updateBrainStatus('Memories cleared', false);
+          setTimeout(() => updateBrainStatus('Brain Ready 🧠', false), 1500);
+        } catch (err) {
+          console.error('Clear memories error:', err);
+          updateBrainStatus('Error clearing memories', true);
+        }
+      }
+    });
+  }
+
+  // Upload memory button
+  if ($uploadMemoryBtn && $brainFileInput) {
+    $uploadMemoryBtn.addEventListener('click', () => {
+      if (brainService && brainService.isReady) {
+        $brainFileInput.click();
+      }
+    });
+
+    $brainFileInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file || !brainService || !brainService.isReady) return;
+
+      try {
+        $uploadMemoryBtn.disabled = true;
+        updateBrainStatus(`Processing ${file.name}...`);
+
+        const result = await brainService.processFile(file);
+
+        updateBrainStatus(`Added ${result.totalChunks} memories from ${file.name}`, false);
+        setTimeout(() => updateBrainStatus('Brain Ready 🧠', false), 3000);
+
+      } catch (err) {
+        console.error('Upload error:', err);
+        updateBrainStatus(`Error: ${err.message}`, true);
+      } finally {
+        $uploadMemoryBtn.disabled = false;
+        $brainFileInput.value = ''; // Reset file input
+      }
+    });
+  }
+
   // Auto-load if model was previously loaded
   autoLoadModel();
+}
+
+// Update brain status UI
+function updateBrainStatus(status, isError = false) {
+  if ($brainStatus) {
+    $brainStatus.textContent = status;
+    $brainStatus.classList.remove('ready', 'error');
+    if (isError) {
+      $brainStatus.classList.add('error');
+    } else if (status.includes('Ready') || status.includes('ready')) {
+      $brainStatus.classList.add('ready');
+    }
+  }
+}
+
+// Initialize the Brain Service
+async function initBrain() {
+  brainService = new BrainService();
+
+  // Status updates
+  brainService.onStatus = (status) => {
+    updateBrainStatus(status);
+  };
+
+  // Progress updates (model download)
+  brainService.onProgress = (progress) => {
+    if ($brainProgress && $brainProgressFill && $brainProgressText) {
+      if (progress.status === 'downloading') {
+        $brainProgress.classList.remove('hidden');
+        $brainProgressFill.style.width = `${progress.percent}%`;
+        const mb = (progress.loaded / (1024 * 1024)).toFixed(1);
+        const totalMb = (progress.total / (1024 * 1024)).toFixed(1);
+        $brainProgressText.textContent = `${mb}/${totalMb} MB (${progress.percent}%)`;
+      } else if (progress.status === 'loaded') {
+        $brainProgress.classList.add('hidden');
+      }
+    }
+  };
+
+  // Memory count updates
+  brainService.onMemoryCountChange = (count) => {
+    if ($brainMemoryCount) {
+      $brainMemoryCount.textContent = `${count} ${count === 1 ? 'memory' : 'memories'}`;
+    }
+    if ($clearMemoriesBtn) {
+      $clearMemoriesBtn.disabled = !brainService.isReady || count === 0;
+    }
+  };
+
+  // Error handling
+  brainService.onError = (error) => {
+    console.error('[Brain] Error:', error);
+    updateBrainStatus(`Error: ${error}`, true);
+  };
+
+  // Ready callback
+  brainService.onReady = (count) => {
+    updateBrainStatus('Brain Ready 🧠', false);
+    if ($uploadMemoryBtn) {
+      $uploadMemoryBtn.disabled = false;
+    }
+    if ($clearMemoriesBtn) {
+      $clearMemoriesBtn.disabled = count === 0;
+    }
+  };
+
+  try {
+    await brainService.init();
+  } catch (err) {
+    console.error('[Brain] Init failed:', err);
+    updateBrainStatus(`Failed: ${err.message}`, true);
+  }
+
+  // Expose for debugging
+  window.brain = brainService;
 }
 
 async function autoLoadModel() {
   const previouslyLoadedModel = localStorage.getItem(MODEL_LOADED_KEY);
   if (previouslyLoadedModel && previouslyLoadedModel === selectedModel) {
+    let modelPath = null;
     try {
       await checkWebGPU();
 
@@ -949,7 +1112,7 @@ async function autoLoadModel() {
       const sizeMB = (cached.blob.size / (1024 * 1024)).toFixed(0);
       updateStatus(`Loading cached model (${sizeMB}MB)...`);
 
-      const modelPath = URL.createObjectURL(cached.blob);
+      modelPath = URL.createObjectURL(cached.blob);
 
       const genai = await FilesetResolver.forGenAiTasks(
         'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@latest/wasm'

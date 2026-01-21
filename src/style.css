@@ -971,3 +971,123 @@ html {
   width: 20px;
   height: 20px;
 }
+
+/* Brain Section Styles */
+.brain-section {
+  margin-top: 12px;
+  padding: 12px;
+  background: #0a0a0a;
+  border: 1px solid #1a1a1a;
+  border-radius: 10px;
+}
+
+.brain-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.brain-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #888;
+}
+
+.brain-title svg {
+  width: 14px;
+  height: 14px;
+  color: #666;
+}
+
+.brain-count {
+  font-size: 10px;
+  color: #555;
+  background: #111;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.brain-status {
+  font-size: 10px;
+  color: #555;
+  margin: 0 0 8px 0;
+}
+
+.brain-status.ready {
+  color: #4ade80;
+}
+
+.brain-status.error {
+  color: #ff6b6b;
+}
+
+.brain-progress {
+  margin-bottom: 10px;
+}
+
+.progress-bar {
+  height: 4px;
+  background: #1a1a1a;
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6 0%, #8b5cf6 100%);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+  width: 0%;
+}
+
+.progress-text {
+  font-size: 9px;
+  color: #555;
+}
+
+.small-btn {
+  padding: 8px 10px;
+  font-size: 11px;
+}
+
+.small-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.small-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.brain-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.brain-actions .settings-btn {
+  flex: 1;
+}
+
+.danger-btn {
+  color: #ff6b6b;
+  border-color: #331111;
+}
+
+.danger-btn:hover {
+  background: #1a0505;
+  border-color: #ff4444;
+}
+
+.brain-hint {
+  font-size: 9px;
+  color: #444;
+  margin: 8px 0 0 0;
+  text-align: center;
+}
