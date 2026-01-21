@@ -16,6 +16,16 @@ export default defineConfig({
                 description: 'A private, on-device AI assistant powered by WebGPU. Works offline after first model download.',
                 theme_color: '#000000',
                 background_color: '#000000',
+                id: '/aithena',
+                start_url: '/',
+                scope: '/',
+                display: 'standalone',
+                display_override: ['standalone', 'minimal-ui'],
+                orientation: 'any',
+                dir: 'ltr',
+                lang: 'en',
+                categories: ['productivity', 'utilities', 'education'],
+                prefer_related_applications: false,
                 icons: [
                     {
                         src: 'pwa-192x192.png',
@@ -39,7 +49,35 @@ export default defineConfig({
                         type: 'image/png',
                         purpose: 'maskable'
                     }
-                ]
+                ],
+                screenshots: [
+                    {
+                        src: 'pwa-512x512.png',
+                        sizes: '512x512',
+                        type: 'image/png',
+                        form_factor: 'wide',
+                        label: 'Aithena AI Assistant'
+                    },
+                    {
+                        src: 'pwa-512x512.png',
+                        sizes: '512x512',
+                        type: 'image/png',
+                        form_factor: 'narrow',
+                        label: 'Aithena AI Assistant Mobile'
+                    }
+                ],
+                shortcuts: [
+                    {
+                        name: 'New Chat',
+                        short_name: 'Chat',
+                        description: 'Start a new AI conversation',
+                        url: '/',
+                        icons: [{ src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' }]
+                    }
+                ],
+                launch_handler: {
+                    client_mode: 'focus-existing'
+                }
             },
             workbox: {
                 globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
