@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="format-detection" content="telephone=no" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <title>Aithena</title>
+    <link rel="preconnect" href="https://huggingface.co" crossorigin />
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <link rel="manifest" href="/manifest.webmanifest">
+</head>
+
+<body>
+    <div class="chat-container">
+        <div class="header">
+            <div class="logo">
+                <span class="logo-icon">Λ</span>
+                <span class="logo-text">Aithena</span>
+            </div>
+            <button id="settings-btn" class="icon-btn">
+                <i data-lucide="settings"></i>
+            </button>
+        </div>
+
+        <div id="download-section" class="hidden">
+            <!-- Settings header will be injected by main.js -->
+
+            <p>Model</p>
+            <div class="download-container">
+                <select id="model-selection"></select>
+                <button id="download" title="Download Model">
+                    <i data-lucide="download"></i>
+                </button>
+            </div>
+            <input type="file" id="model-file-input" accept=".bin,.task,.litertlm,.lmrt" hidden />
+            <p class="model-hint">All models require one-time download from HuggingFace</p>
+            <p id="download-status" class="hidden"></p>
+
+            <!-- System Prompt Settings -->
+            <div class="system-prompt-section">
+                <button id="sys-prompt-toggle" class="settings-btn small-btn">
+                    <i data-lucide="brain-circuit"></i>
+                    <span>System Prompt</span>
+                    <i data-lucide="chevron-down" class="chevron"></i>
+                </button>
+                <div id="sys-prompt-editor" class="hidden">
+                    <textarea id="sys-prompt-input" autocomplete="off" spellcheck="false"></textarea>
+                    <button id="sys-prompt-reset" class="reset-link">Reset to Default</button>
+                </div>
+            </div>
+            <label class="settings-option">
+                <input type="checkbox" id="voice-response-toggle" checked />
+                <span>Enable Voice Responses</span>
+            </label>
+
+            <div class="settings-actions">
+                <button id="clear-chat" class="settings-btn" title="Clear Chat">
+                    <i data-lucide="trash-2"></i>
+                    <span>Clear Chat</span>
+                </button>
+            </div>
+
+            <!-- Brain Section -->
+            <div class="brain-section">
+                <div class="settings-header" style="margin-top: 24px; border-bottom: none; padding-bottom: 0;">
+                    <h2>Brain</h2>
+                </div>
+                <p class="model-hint" style="text-align: left; margin-bottom: 12px; margin-top: 8px;">Managed Memories
+                </p>
+
+                <div id="brain-status" class="brain-status"></div>
+                <div id="brain-progress" class="brain-progress hidden">
+                    <div class="progress-bar">
+                        <div id="brain-progress-fill" class="progress-fill"></div>
+                    </div>
+                    <div id="brain-progress-text" class="progress-text">Processing...</div>
+                </div>
+
+                <div class="brain-stats">
+                    <span id="brain-memory-count">0 memories</span>
+                </div>
+
+                <div class="brain-actions">
+                    <button id="upload-memory" class="settings-btn small-btn" disabled>
+                        <i data-lucide="upload"></i>
+                        <span>Upload</span>
+                    </button>
+                    <button id="clear-memories" class="settings-btn small-btn danger-btn">
+                        <i data-lucide="trash-2"></i>
+                        <span>Clear All</span>
+                    </button>
+                </div>
+                <input type="file" id="brain-file-input" accept=".pdf,.txt,.md,.csv,.json" multiple hidden />
+                <p class="brain-hint">Supported: PDF, TXT, MD, CSV, JSON</p>
+            </div>
+        </div>
+        <div id="chat-box" class="chat-box"></div>
+        <div id="chat-stats" class="chat-stats hidden"></div>
+        <div class="chat-input-container">
+            <button id="mic-btn" class="icon-btn mic-btn" title="Voice Mode">
+                <i data-lucide="mic"></i>
+            </button>
+            <input type="text" id="user-input" placeholder="Type a message..." />
+            <button id="send" disabled title="Send Message">
+                <i data-lucide="arrow-up"></i>
+            </button>
+        </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+</body>
+
+</html>
