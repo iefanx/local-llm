@@ -1,6 +1,6 @@
 import { FilesetResolver, LlmInference } from '@mediapipe/tasks-genai';
 import { registerSW } from 'virtual:pwa-register';
-import { createIcons, Settings, Download, ArrowUp, Brain, ChevronDown, Trash2, Star, Package, FolderOpen, Mic, MicOff, BrainCircuit, Upload } from 'lucide';
+import { createIcons, Settings, Download, ArrowUp, Brain, ChevronDown, Trash2, Star, Package, FolderOpen, Mic, MicOff, BrainCircuit, Upload, X } from 'lucide';
 import { VoiceService } from './services/voice';
 import { BrainService } from './services/brain';
 import { marked } from 'marked';
@@ -75,7 +75,35 @@ function initIcons() {
       Mic,
       MicOff,
       BrainCircuit,
-      Upload
+      Upload,
+      X
+    }
+  });
+}
+
+// Inject details into settings panel (since we can't edit HTML directly)
+function injectSettingsHeader() {
+  const section = document.getElementById('download-section');
+  if (!section || section.querySelector('.settings-header')) return;
+
+  const header = document.createElement('div');
+  header.className = 'settings-header';
+  header.innerHTML = `
+    <h2>Settings</h2>
+    <button id="close-settings-btn" class="icon-btn close-btn">
+      <i data-lucide="x"></i>
+    </button>
+  `;
+
+  // Insert as first child
+  section.insertBefore(header, section.firstChild);
+
+  // Refresh icons for the new X button
+  createIcons({
+    icons: { X },
+    nameAttr: 'data-lucide',
+    attrs: {
+      class: "lucide lucide-x"
     }
   });
 }
@@ -779,6 +807,7 @@ function clearConversation() {
 /*************** UI binding ***************/
 async function initUI() {
   initDOMCache();
+  injectSettingsHeader();
   initIcons();
 
   // Initialize Voice Service
@@ -904,17 +933,47 @@ async function initUI() {
   }
 
   // Settings toggle
+  const toggleSettings = (show) => {
+    const isVisible = $downloadSection.classList.contains('visible');
+    const shouldShow = show !== undefined ? show : !isVisible;
+
+    if (shouldShow) {
+      $downloadSection.classList.add('visible');
+      $downloadSection.classList.remove('hidden'); // Ensure hidden class is removed if present
+    } else {
+      $downloadSection.classList.remove('visible');
+      // Wait for animation to finish before hiding display if needed, 
+      // but for now relying on opacity/pointer-events is enough.
+      // setTimeout(() => $downloadSection.classList.add('hidden'), 300);
+    }
+  };
+
   document.getElementById('settings-btn').addEventListener('click', () => {
-    $downloadSection.classList.toggle('hidden');
+    toggleSettings(true);
   });
 
-  // Close settings when clicking outside
+  // Close button handler (delegate since it's dynamically added)
+  document.getElementById('download-section').addEventListener('click', (e) => {
+    if (e.target.closest('#close-settings-btn')) {
+      toggleSettings(false);
+    }
+  });
+
+  // Close settings when clicking outside (not needed for full screen usually, but good for UX if they click background)
+  // Since it's full screen, clicking "outside" checking against the container effectively means clicking the backdrop if we add padding/margin.
+  // But our CSS makes the #download-section full screen including padding. 
+  // Let's modify to: if clicking the section background (outside the inner content), close it.
+  // But currently #download-section IS the container.
+  // Let's rely on the Close button for now as primary.
+
+  /* 
   document.addEventListener('click', (e) => {
     const settingsBtn = document.getElementById('settings-btn');
     if (!$downloadSection.contains(e.target) && !settingsBtn.contains(e.target)) {
-      $downloadSection.classList.add('hidden');
+      toggleSettings(false);
     }
   });
+  */
 
   // Clear chat button
   const clearBtn = document.getElementById('clear-chat');
@@ -975,7 +1034,7 @@ async function initUI() {
         try {
           await brainService.clear();
           updateBrainStatus('Memories cleared', false);
-          setTimeout(() => updateBrainStatus('Brain Ready 🧠', false), 1500);
+          setTimeout(() => updateBrainStatus('Brain Ready', false), 1500);
         } catch (err) {
           console.error('Clear memories error:', err);
           updateBrainStatus('Error clearing memories', true);
@@ -1003,7 +1062,7 @@ async function initUI() {
         const result = await brainService.processFile(file);
 
         updateBrainStatus(`Added ${result.totalChunks} memories from ${file.name}`, false);
-        setTimeout(() => updateBrainStatus('Brain Ready 🧠', false), 3000);
+        setTimeout(() => updateBrainStatus('Brain Ready', false), 3000);
 
       } catch (err) {
         console.error('Upload error:', err);
@@ -1074,7 +1133,7 @@ async function initBrain() {
 
   // Ready callback
   brainService.onReady = (count) => {
-    updateBrainStatus('Brain Ready 🧠', false);
+    updateBrainStatus('Brain Ready', false);
     if ($uploadMemoryBtn) {
       $uploadMemoryBtn.disabled = false;
     }

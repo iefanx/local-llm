@@ -51,7 +51,7 @@ export class BrainService {
 
             this.onReady?.(this.memoryCount);
             this.onMemoryCountChange?.(this.memoryCount);
-            this.onStatus?.('Brain Ready 🧠');
+            this.onStatus?.('Brain Ready');
 
         } catch (err) {
             console.error('[Brain] Init failed:', err);
@@ -199,7 +199,7 @@ export class BrainService {
             const result = await this.addMemory(text, source);
             results.push(result);
         }
-        this.onStatus?.('Brain Ready 🧠');
+        this.onStatus?.('Brain Ready');
         return results;
     }
 
