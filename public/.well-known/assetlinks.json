@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "net.iefan.chat.twa",
+        "sha256_cert_fingerprints": ["2E:0D:7C:2E:8F:CF:6C:EB:4F:9E:12:7F:95:78:C1:E5:0D:3F:EE:F5:59:10:0B:3D:09:4D:82:43:D4:24:45:5E"]
+      }
+    }]
