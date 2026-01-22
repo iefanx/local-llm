@@ -807,7 +807,6 @@ function clearConversation() {
 /*************** UI binding ***************/
 async function initUI() {
   initDOMCache();
-  injectSettingsHeader();
   initIcons();
 
   // Initialize Voice Service

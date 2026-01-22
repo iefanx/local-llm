@@ -146,7 +146,15 @@ html {
   justify-content: space-between;
   margin-bottom: 24px;
   padding-bottom: 16px;
-  border-bottom: 1px solid #222;
+  border-bottom: 1px solid #1a1a1a;
+}
+
+.settings-header h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0;
+  color: #afadad;
+  letter-spacing: -0.5px;
 }
 
 .settings-header h2 {
@@ -201,12 +209,19 @@ html {
   overflow: hidden;
   text-overflow: ellipsis;
   height: 48px;
-  transition: border-color 0.2s;
+  transition: all 0.2s ease;
+  font-weight: 500;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+  background-position: right 0.5rem center;
+  background-repeat: no-repeat;
+  background-size: 1.5em 1.5em;
+  padding-right: 2.5rem;
 }
 
 #model-selection:focus {
   outline: none;
-  border-color: #444;
+  border-color: #555;
+  background-color: #111;
 }
 
 #download {
@@ -1081,11 +1096,59 @@ html {
 }
 
 .brain-count {
-  font-size: 10px;
-  color: #555;
-  background: #111;
-  padding: 2px 8px;
-  border-radius: 10px;
+  font-size: 11px;
+  color: #888;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  margin-left: auto;
+  font-weight: 500;
+}
+
+.brain-status.error {
+  color: #ff6b6b;
+}
+
+.brain-status.ready::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: #10b981;
+  border-radius: 50%;
+  margin-right: 8px;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+}
+
+.brain-status.ready {
+  color: #ccc;
+  font-weight: 500;
+}
+
+.brain-status {
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  font-size: 13px;
+  color: #888;
+  display: flex;
+  align-items: center;
+  min-height: auto;
+  margin-bottom: 0;
+  font-weight: 500;
+  width: 100%;
+}
+
+.brain-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: #0a0a0a;
+  border: 1px solid #1a1a1a;
+  border-radius: 12px;
+  margin-bottom: 12px;
 }
 
 .brain-status {
@@ -1100,6 +1163,22 @@ html {
 
 .brain-status.error {
   color: #ff6b6b;
+}
+
+.brain-status.ready::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: #10b981;
+  border-radius: 50%;
+  margin-right: 8px;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+}
+
+.brain-status.ready {
+  color: #fff;
+  font-weight: 500;
 }
 
 .brain-progress {
