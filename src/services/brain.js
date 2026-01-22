@@ -23,6 +23,8 @@ export class BrainService {
         this.memoryIdCounter = 0;
         this.isReady = false;
         this.memoryCount = 0;
+        this._paused = false;
+        this._embeddingsCache = new Map(); // In-memory cache for embeddings
 
         // Callbacks
         this.onReady = null;
@@ -61,10 +63,21 @@ export class BrainService {
     }
 
     /**
-     * Initialize IndexedDB
+     * Initialize IndexedDB with embedding storage
      */
     async _initDatabase() {
         this.db = new Dexie('aithena-brain');
+
+        // Version 2 adds embedding column for caching
+        this.db.version(2).stores({
+            memories: '++id, text, embedding, createdAt, source',
+            metadata: 'key, value'
+        }).upgrade(tx => {
+            // Migration: existing memories don't have embeddings, that's ok
+            console.log('[Brain] Upgrading database to version 2');
+        });
+
+        // Fallback for version 1
         this.db.version(1).stores({
             memories: '++id, text, createdAt, source',
             metadata: 'key, value'
@@ -103,7 +116,7 @@ export class BrainService {
     }
 
     /**
-     * Initialize vector index from stored memories
+     * Initialize vector index from stored memories (optimized)
      */
     async _initVectorIndex() {
         const memories = await this.db.memories.toArray();
@@ -112,14 +125,35 @@ export class BrainService {
             console.log(`[Brain] Rebuilding vector index from ${memories.length} memories...`);
 
             const articles = [];
+            let needsReEmbed = 0;
+
             for (const memory of memories) {
-                const embedding = await this._embed(memory.text);
+                let embedding;
+
+                // Use cached embedding if available
+                if (memory.embedding && Array.isArray(memory.embedding)) {
+                    embedding = memory.embedding;
+                    this._embeddingsCache.set(memory.id, embedding);
+                } else {
+                    // Need to compute embedding (old data without cache)
+                    embedding = await this._embed(memory.text);
+                    this._embeddingsCache.set(memory.id, embedding);
+                    needsReEmbed++;
+
+                    // Update database with embedding for future
+                    await this.db.memories.update(memory.id, { embedding });
+                }
+
                 articles.push({
                     id: String(memory.id),
                     title: memory.text.substring(0, 50),
                     url: String(memory.id),
                     embeddings: embedding
                 });
+            }
+
+            if (needsReEmbed > 0) {
+                console.log(`[Brain] Re-embedded ${needsReEmbed} memories (cached for future)`);
             }
 
             this.voyIndex = new Voy({ embeddings: articles });
@@ -139,7 +173,7 @@ export class BrainService {
     }
 
     /**
-     * Add a memory
+     * Add a memory (optimized - no full index rebuild)
      */
     async addMemory(text, source = 'manual') {
         if (!text?.trim()) {
@@ -149,27 +183,34 @@ export class BrainService {
         this.memoryIdCounter++;
         const id = this.memoryIdCounter;
 
-        // Store in database
+        // Generate embedding first
+        const embedding = await this._embed(text.trim());
+        this._embeddingsCache.set(id, embedding);
+
+        // Store in database WITH embedding for future
         await this.db.memories.add({
             id,
             text: text.trim(),
             source,
+            embedding, // Cache embedding in DB!
             createdAt: new Date().toISOString()
         });
 
         await this.db.metadata.put({ key: 'memoryIdCounter', value: this.memoryIdCounter });
 
-        // Add to vector index
-        const embedding = await this._embed(text);
-
-        // Rebuild index with new memory
+        // OPTIMIZED: Build articles array using cached embeddings
         const allMemories = await this.db.memories.toArray();
         const articles = [];
 
         for (const memory of allMemories) {
-            const memEmbedding = memory.id === id
-                ? embedding
-                : await this._embed(memory.text);
+            // Use cached embedding (either from DB or in-memory)
+            let memEmbedding = this._embeddingsCache.get(memory.id);
+
+            if (!memEmbedding) {
+                // Fallback: use DB stored embedding or re-compute
+                memEmbedding = memory.embedding || await this._embed(memory.text);
+                this._embeddingsCache.set(memory.id, memEmbedding);
+            }
 
             articles.push({
                 id: String(memory.id),
@@ -244,8 +285,54 @@ export class BrainService {
         this.memoryIdCounter = 0;
         this.voyIndex = null;
         this.memoryCount = 0;
+        this._embeddingsCache.clear(); // Clear embedding cache
         this.onMemoryCountChange?.(0);
         console.log('[Brain] All memories cleared');
+    }
+
+    /**
+     * Pause brain service to free memory (for iOS compatibility)
+     */
+    pause() {
+        if (this._paused) return;
+        this._paused = true;
+
+        // Release embedder model to free memory
+        if (this.embedder) {
+            console.log('[Brain] Pausing - releasing embedder model');
+            this.embedder = null;
+        }
+
+        // Clear embedding cache
+        this._embeddingsCache.clear();
+
+        this.onStatus?.('Brain paused (saving memory)');
+    }
+
+    /**
+     * Resume brain service after pause
+     */
+    async resume() {
+        if (!this._paused) return;
+        this._paused = false;
+
+        console.log('[Brain] Resuming...');
+        this.onStatus?.('Resuming brain...');
+
+        try {
+            // Reload embedder if needed
+            if (!this.embedder) {
+                await this._loadEmbedder();
+            }
+
+            // Rebuild vector index
+            await this._initVectorIndex();
+
+            this.onStatus?.('Brain Ready');
+        } catch (err) {
+            console.error('[Brain] Resume failed:', err);
+            this.onError?.(err.message);
+        }
     }
 
     /**

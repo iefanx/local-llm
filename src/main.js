@@ -31,6 +31,81 @@ function debounce(fn, delay) {
   };
 }
 
+/*************** Device Capability Detection ***************/
+
+// Cached device capabilities
+let deviceCapabilities = null;
+
+// Detect device capabilities for memory-safe loading
+function getDeviceCapabilities() {
+  if (deviceCapabilities) return deviceCapabilities;
+
+  const memory = navigator.deviceMemory || 4; // GB, defaults to 4
+  const userAgent = navigator.userAgent;
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(userAgent);
+  const isSafari = /^((?!chrome|android).)*safari/i.test(userAgent);
+  const isIOS = /iPhone|iPad|iPod/i.test(userAgent);
+  const isLowMemoryDevice = memory <= 4 || isIOS;
+
+  // Estimate max safe model size based on device
+  // iOS Safari has ~1-1.5GB per-tab limit, need headroom for WebGPU
+  let maxModelSizeMB = 2000; // Default for desktop
+  if (isIOS) {
+    maxModelSizeMB = memory <= 4 ? 800 : 1200;
+  } else if (isMobile) {
+    maxModelSizeMB = memory <= 4 ? 1000 : 1500;
+  }
+
+  deviceCapabilities = {
+    memory,
+    isMobile,
+    isSafari,
+    isIOS,
+    isLowMemoryDevice,
+    maxModelSizeMB,
+    supportsStreaming: 'ReadableStream' in window
+  };
+
+  console.log('[Device] Capabilities:', deviceCapabilities);
+  return deviceCapabilities;
+}
+
+// Categorize errors for better user feedback
+function categorizeError(error) {
+  const message = (error.message || '').toLowerCase();
+  const name = (error.name || '').toLowerCase();
+
+  if (message.includes('memory') || message.includes('quota') || name === 'quotaexceedederror') {
+    return {
+      type: 'MEMORY',
+      userMessage: 'Not enough memory. Please close other tabs/apps and try again.',
+      recoverable: true
+    };
+  }
+  if (message.includes('webgpu') || message.includes('adapter')) {
+    return {
+      type: 'WEBGPU',
+      userMessage: 'WebGPU not supported. Use Safari 18+, Chrome 113+, or Edge 113+.',
+      recoverable: false
+    };
+  }
+  if (message.includes('network') || message.includes('failed to fetch') || message.includes('fetch')) {
+    return {
+      type: 'NETWORK',
+      userMessage: 'Download failed. Check your connection and try again.',
+      recoverable: true
+    };
+  }
+  return {
+    type: 'UNKNOWN',
+    userMessage: error.message,
+    recoverable: false
+  };
+}
+
+// Track if brain service should be deferred
+let brainServiceDeferred = false;
+
 // Initialize DOM element cache
 function initDOMCache() {
   $chatBox = document.getElementById('chat-box');
@@ -377,8 +452,11 @@ function getModelConfig(modelId) {
   return availableModels.find(m => m.id === modelId) || availableModels[0];
 }
 
-// Initialize MediaPipe LLM
+// Initialize MediaPipe LLM with memory-safe loading
 async function initializeLLM(modelFile = null) {
+  const capabilities = getDeviceCapabilities();
+  let modelPath = null;
+
   try {
     await checkWebGPU();
 
@@ -416,6 +494,15 @@ async function initializeLLM(modelFile = null) {
       }
     }
 
+    // CRITICAL: On memory-constrained devices, pause brain service during model loading
+    if (capabilities.isLowMemoryDevice && brainService && brainService.isReady) {
+      console.log('[Memory] Pausing brain service for model loading on low-memory device');
+      brainServiceDeferred = true;
+      if (brainService.pause) {
+        brainService.pause();
+      }
+    }
+
     updateStatus(`Initializing MediaPipe...`);
 
     // Initialize FilesetResolver
@@ -423,12 +510,8 @@ async function initializeLLM(modelFile = null) {
       'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@latest/wasm'
     );
 
-    let modelPath;
-    let modelBlob = null;
-
     if (modelFile) {
       // Use local file provided by user
-      modelBlob = modelFile;
       modelPath = URL.createObjectURL(modelFile);
       updateStatus(`Loading model: ${modelFile.name}...`);
 
@@ -443,52 +526,25 @@ async function initializeLLM(modelFile = null) {
       if (cached && cached.blob) {
         // Use cached model
         const sizeMB = (cached.blob.size / (1024 * 1024)).toFixed(0);
+
+        // Check if model is too large for device
+        if (parseInt(sizeMB) > capabilities.maxModelSizeMB) {
+          console.warn(`[Memory] Model size ${sizeMB}MB exceeds safe limit ${capabilities.maxModelSizeMB}MB`);
+          updateStatus(`Warning: Large model may cause issues on this device`);
+        }
+
         updateStatus(`Loading cached model (${sizeMB}MB)...`);
         modelPath = URL.createObjectURL(cached.blob);
       } else if (modelConfig.url) {
-        // Download from URL (bundled or remote)
-        updateStatus(`Downloading ${modelConfig.name}... This may take a while.`);
+        // Download from URL with retry logic
+        await downloadModelWithRetry(modelConfig, (status) => updateStatus(status));
 
-        try {
-          const response = await fetch(modelConfig.url);
-          if (!response.ok) {
-            throw new Error(`Failed to download model: ${response.status}`);
-          }
-
-          // Get total size for progress
-          const contentLength = response.headers.get('content-length');
-          const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
-
-          // Read the stream with progress
-          const reader = response.body.getReader();
-          const chunks = [];
-          let receivedBytes = 0;
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            chunks.push(value);
-            receivedBytes += value.length;
-
-            if (totalBytes > 0) {
-              const percent = Math.round((receivedBytes / totalBytes) * 100);
-              const mbReceived = (receivedBytes / (1024 * 1024)).toFixed(0);
-              const mbTotal = (totalBytes / (1024 * 1024)).toFixed(0);
-              updateStatus(`Downloading ${modelConfig.name}... ${mbReceived}/${mbTotal}MB (${percent}%)`);
-            }
-          }
-
-          // Combine chunks into blob
-          const blob = new Blob(chunks);
-          modelPath = URL.createObjectURL(blob);
-
-          // Cache for next time
-          updateStatus(`Caching model for faster loading next time...`);
-          await cacheModel(selectedModel, blob, modelConfig.name);
-
-        } catch (fetchError) {
-          throw new Error(`Download failed: ${fetchError.message}`);
+        // Get the cached model after download
+        const freshCached = await getCachedModel(selectedModel);
+        if (freshCached && freshCached.blob) {
+          modelPath = URL.createObjectURL(freshCached.blob);
+        } else {
+          throw new Error('Model download completed but cache read failed');
         }
       } else {
         // No URL and not cached - need manual download
@@ -496,12 +552,14 @@ async function initializeLLM(modelFile = null) {
       }
     }
 
+    updateStatus('Loading model into WebGPU...');
+
     // Create LLM instance
     llmInference = await LlmInference.createFromOptions(genai, {
       baseOptions: {
         modelAssetPath: modelPath
       },
-      maxTokens: 2048,
+      maxTokens: capabilities.isLowMemoryDevice ? 1024 : 2048, // Reduce tokens on low-memory
       topK: 40,
       temperature: 0.7,
       randomSeed: Math.floor(Math.random() * 1000)
@@ -511,20 +569,107 @@ async function initializeLLM(modelFile = null) {
     $sendBtn.disabled = false;
     localStorage.setItem(MODEL_LOADED_KEY, selectedModel);
 
-    // Revoke blob URL to free memory (critical for Safari)
+    // CRITICAL: Revoke blob URL immediately to free memory
     if (modelPath && modelPath.startsWith('blob:')) {
-      URL.revokeObjectURL(modelPath);
+      // Give MediaPipe a moment to read the blob, then revoke
+      setTimeout(() => {
+        URL.revokeObjectURL(modelPath);
+        console.log('[Memory] Revoked blob URL to free memory');
+      }, 1000);
     }
 
     // Reset conversation
     conversationHistory = [];
 
+    // Resume brain service after successful model load
+    if (brainServiceDeferred && brainService && brainService.resume) {
+      console.log('[Memory] Resuming brain service after model load');
+      setTimeout(() => brainService.resume(), 2000);
+      brainServiceDeferred = false;
+    }
+
   } catch (err) {
     console.error('Initialization error:', err);
-    updateStatus(`Error: ${err.message}`, true);
+
+    // Categorize error for better user feedback
+    const categorized = categorizeError(err);
+    updateStatus(`Error: ${categorized.userMessage}`, true);
+
+    // Clean up on error
+    if (modelPath && modelPath.startsWith('blob:')) {
+      URL.revokeObjectURL(modelPath);
+    }
+
+    // Resume brain service on error too
+    if (brainServiceDeferred && brainService && brainService.resume) {
+      brainService.resume();
+      brainServiceDeferred = false;
+    }
+
     $downloadBtn.disabled = false;
     throw err;
   }
+}
+
+// Download model with retry logic and progress
+async function downloadModelWithRetry(modelConfig, onStatus, maxRetries = 3) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      if (attempt > 1) {
+        onStatus(`Retrying download (attempt ${attempt}/${maxRetries})...`);
+        await new Promise(r => setTimeout(r, 2000 * attempt)); // Exponential backoff
+      }
+
+      const response = await fetch(modelConfig.url);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      // Get total size for progress
+      const contentLength = response.headers.get('content-length');
+      const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
+
+      // Read the stream with progress
+      const reader = response.body.getReader();
+      const chunks = [];
+      let receivedBytes = 0;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        chunks.push(value);
+        receivedBytes += value.length;
+
+        if (totalBytes > 0) {
+          const percent = Math.round((receivedBytes / totalBytes) * 100);
+          const mbReceived = (receivedBytes / (1024 * 1024)).toFixed(0);
+          const mbTotal = (totalBytes / (1024 * 1024)).toFixed(0);
+          onStatus(`Downloading ${modelConfig.name}... ${mbReceived}/${mbTotal}MB (${percent}%)`);
+        }
+      }
+
+      // Combine chunks into blob
+      const blob = new Blob(chunks);
+
+      // Clear chunks array to help GC
+      chunks.length = 0;
+
+      // Cache for next time
+      onStatus(`Caching model for faster loading next time...`);
+      await cacheModel(selectedModel, blob, modelConfig.name);
+
+      return; // Success
+
+    } catch (fetchError) {
+      lastError = fetchError;
+      console.warn(`Download attempt ${attempt} failed:`, fetchError);
+    }
+  }
+
+  throw new Error(`Download failed after ${maxRetries} attempts: ${lastError?.message}`);
 }
 
 // Format conversation for Gemma
@@ -1023,9 +1168,6 @@ async function initUI() {
     }
   }
 
-  // Initialize Brain Service
-  initBrain();
-
   // Clear memories button
   if ($clearMemoriesBtn) {
     $clearMemoriesBtn.addEventListener('click', async () => {
@@ -1073,8 +1215,36 @@ async function initUI() {
     });
   }
 
-  // Auto-load if model was previously loaded
-  autoLoadModel();
+  // CRITICAL: Stagger service initialization to reduce memory pressure
+  // On low-memory devices (iOS), load LLM first, then brain service
+  const capabilities = getDeviceCapabilities();
+
+  if (capabilities.isLowMemoryDevice) {
+    console.log('[Memory] Low-memory device detected, staggering initialization');
+    // Auto-load model first (larger, more critical)
+    await autoLoadModel();
+    // Then initialize Brain Service after model is loaded
+    setTimeout(() => initBrain(), 3000);
+  } else {
+    // On high-memory devices, can run both in parallel
+    initBrain();
+    autoLoadModel();
+  }
+
+  // Monitor online/offline status
+  window.addEventListener('online', () => {
+    if (!llmInference) {
+      updateStatus('Connection restored');
+    }
+  });
+
+  window.addEventListener('offline', () => {
+    if (!llmInference) {
+      updateStatus('Offline - model not available', true);
+    } else {
+      updateStatus('Offline mode - using cached model');
+    }
+  });
 }
 
 // Update brain status UI

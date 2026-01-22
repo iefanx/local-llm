@@ -153,15 +153,8 @@ html {
   font-size: 20px;
   font-weight: 600;
   margin: 0;
-  color: #afadad;
-  letter-spacing: -0.5px;
-}
-
-.settings-header h2 {
-  font-size: 20px;
-  font-weight: 600;
-  margin: 0;
   color: #fff;
+  letter-spacing: -0.5px;
 }
 
 .close-btn {
@@ -563,6 +556,8 @@ html {
   background: #555;
   border-radius: 50%;
   animation: loadingPulse 1.4s ease-in-out infinite;
+  will-change: opacity, transform;
+  /* GPU acceleration */
 }
 
 .loading-dots span:nth-child(2) {
@@ -1043,6 +1038,8 @@ html {
   color: #ff6b6b;
   border-color: #ff4444;
   animation: pulse-red 1.5s infinite;
+  will-change: box-shadow;
+  /* GPU acceleration */
 }
 
 @keyframes pulse-red {
@@ -1105,41 +1102,6 @@ html {
   font-weight: 500;
 }
 
-.brain-status.error {
-  color: #ff6b6b;
-}
-
-.brain-status.ready::before {
-  content: '';
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  background: #10b981;
-  border-radius: 50%;
-  margin-right: 8px;
-  box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
-}
-
-.brain-status.ready {
-  color: #ccc;
-  font-weight: 500;
-}
-
-.brain-status {
-  padding: 0;
-  background: transparent;
-  border: none;
-  border-radius: 0;
-  font-size: 13px;
-  color: #888;
-  display: flex;
-  align-items: center;
-  min-height: auto;
-  margin-bottom: 0;
-  font-weight: 500;
-  width: 100%;
-}
-
 .brain-stats {
   display: flex;
   align-items: center;
@@ -1151,18 +1113,24 @@ html {
   margin-bottom: 12px;
 }
 
+/* Consolidated brain-status styles - removed duplicates */
 .brain-status {
-  font-size: 10px;
-  color: #555;
-  margin: 0 0 8px 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  font-size: 12px;
+  color: #888;
+  display: flex;
+  align-items: center;
+  min-height: auto;
+  margin-bottom: 8px;
+  font-weight: 500;
+  width: 100%;
 }
 
 .brain-status.ready {
   color: #4ade80;
-}
-
-.brain-status.error {
-  color: #ff6b6b;
 }
 
 .brain-status.ready::before {
@@ -1176,9 +1144,8 @@ html {
   box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
 }
 
-.brain-status.ready {
-  color: #fff;
-  font-weight: 500;
+.brain-status.error {
+  color: #ff6b6b;
 }
 
 .brain-progress {
