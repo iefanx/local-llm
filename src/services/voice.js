@@ -8,7 +8,31 @@ export class VoiceService {
         this.onError = null;
         this.onStateChange = null;
 
+        // Streaming TTS state
+        this.speechQueue = [];
+        this.isProcessingQueue = false;
+        this.lastSpokenIndex = 0;
+        this.streamingText = '';
+        this.preferredVoice = null;
+
         this.initRecognition();
+        this._loadPreferredVoice();
+    }
+
+    // Pre-load preferred voice for faster streaming
+    _loadPreferredVoice() {
+        const loadVoice = () => {
+            const voices = this.synthesis.getVoices();
+            this.preferredVoice = voices.find(v => v.name.includes('Google US English')) ||
+                voices.find(v => v.lang === 'en-US' && !v.name.includes('Samantha'));
+        };
+
+        // Voices may load async
+        if (this.synthesis.getVoices().length > 0) {
+            loadVoice();
+        } else {
+            this.synthesis.addEventListener('voiceschanged', loadVoice, { once: true });
+        }
     }
 
     initRecognition() {
@@ -110,10 +134,141 @@ export class VoiceService {
         this.synthesis.speak(utterance);
     }
 
+    /**
+     * Start streaming speech mode - call this before feeding streaming text
+     */
+    startStreamingSpeech() {
+        this.stopSpeaking();
+        this.speechQueue = [];
+        this.isProcessingQueue = false;
+        this.lastSpokenIndex = 0;
+        this.streamingText = '';
+    }
+
+    /**
+     * Feed streaming text - extracts complete sentences and queues them for speech
+     * Call this with the accumulated text as it streams in
+     */
+    updateStreamingText(accumulatedText) {
+        if (!this.synthesis) return;
+
+        // Clean text for speech
+        const cleanText = accumulatedText
+            .replace(/<think>[\s\S]*?<\/think>/g, '') // Remove thinking blocks
+            .replace(/<think>[\s\S]*$/g, '') // Remove incomplete thinking
+            .replace(/[*#`_]/g, '') // Remove markdown
+            .replace(/<[^>]*>/g, '') // Remove HTML tags
+            .trim();
+
+        // Find complete sentences (ending with . ! ?)
+        // Use regex to find sentence boundaries
+        const sentencePattern = /[^.!?]*[.!?]+/g;
+        const sentences = cleanText.match(sentencePattern) || [];
+
+        // Queue any new complete sentences
+        const newSentences = sentences.slice(this.speechQueue.length);
+
+        for (const sentence of newSentences) {
+            const trimmedSentence = sentence.trim();
+            if (trimmedSentence.length > 2) { // Ignore very short fragments
+                this.speechQueue.push(trimmedSentence);
+            }
+        }
+
+        // Process the queue
+        this._processQueue();
+    }
+
+    /**
+     * End streaming speech - speak any remaining text
+     */
+    endStreamingSpeech(finalText) {
+        if (!this.synthesis) return;
+
+        // Clean text
+        const cleanText = finalText
+            .replace(/<think>[\s\S]*?<\/think>/g, '')
+            .replace(/[*#`_]/g, '')
+            .replace(/<[^>]*>/g, '')
+            .trim();
+
+        // Find the last complete sentence end
+        const lastSentenceEnd = Math.max(
+            cleanText.lastIndexOf('.'),
+            cleanText.lastIndexOf('!'),
+            cleanText.lastIndexOf('?')
+        );
+
+        // If there's remaining text after the last sentence, queue it
+        if (lastSentenceEnd !== -1 && lastSentenceEnd < cleanText.length - 1) {
+            const remainder = cleanText.substring(lastSentenceEnd + 1).trim();
+            if (remainder.length > 2) {
+                this.speechQueue.push(remainder);
+            }
+        } else if (this.speechQueue.length === 0) {
+            // No sentences were queued, speak the whole thing
+            this.speechQueue.push(cleanText);
+        }
+
+        this._processQueue();
+    }
+
+    /**
+     * Process the speech queue - speak sentences one by one
+     */
+    _processQueue() {
+        if (this.isProcessingQueue || this.speechQueue.length === 0) return;
+        if (this.lastSpokenIndex >= this.speechQueue.length) return;
+
+        this.isProcessingQueue = true;
+
+        const speakNext = () => {
+            if (this.lastSpokenIndex >= this.speechQueue.length) {
+                this.isProcessingQueue = false;
+                return;
+            }
+
+            const sentence = this.speechQueue[this.lastSpokenIndex];
+            this.lastSpokenIndex++;
+
+            const utterance = new SpeechSynthesisUtterance(sentence);
+
+            if (this.preferredVoice) {
+                utterance.voice = this.preferredVoice;
+            }
+
+            utterance.rate = 1.0;
+            utterance.pitch = 1.0;
+
+            utterance.onstart = () => {
+                this.isSpeaking = true;
+                this.notifyStateChange();
+            };
+
+            utterance.onend = () => {
+                // Speak next sentence in queue
+                speakNext();
+            };
+
+            utterance.onerror = () => {
+                // Try next sentence even on error
+                speakNext();
+            };
+
+            this.synthesis.speak(utterance);
+        };
+
+        speakNext();
+    }
+
     stopSpeaking() {
         if (this.synthesis) {
             this.synthesis.cancel();
             this.isSpeaking = false;
+            // Reset streaming state
+            this.speechQueue = [];
+            this.isProcessingQueue = false;
+            this.lastSpokenIndex = 0;
             this.notifyStateChange();
         }
     }

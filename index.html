@@ -3,8 +3,8 @@
 
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport"
-        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <!-- Allow user scaling for accessibility (max-scale 5 is the minimum for WCAG) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover" />
     <meta name="theme-color" content="#000000" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -13,36 +13,40 @@
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Aithena</title>
+    <!-- Preconnect to CDNs for faster loading -->
     <link rel="preconnect" href="https://huggingface.co" crossorigin />
+    <link rel="dns-prefetch" href="https://huggingface.co" />
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net" />
     <link rel="manifest" href="/manifest.webmanifest">
 </head>
 
 <body>
-    <div class="chat-container">
-        <div class="header">
+    <!-- Main landmark for accessibility -->
+    <main class="chat-container">
+        <header class="header">
             <div class="logo">
-                <span class="logo-icon">Λ</span>
+                <span class="logo-icon" aria-hidden="true">Λ</span>
                 <span class="logo-text">Aithena</span>
             </div>
-            <button id="settings-btn" class="icon-btn">
-                <i data-lucide="settings"></i>
+            <button id="settings-btn" class="icon-btn" aria-label="Open settings">
+                <i data-lucide="settings" aria-hidden="true"></i>
             </button>
-        </div>
+        </header>
 
         <div id="download-section" class="hidden">
             <div class="settings-header">
                 <h2>Settings</h2>
-                <button id="close-settings-btn" class="icon-btn close-btn">
-                    <i data-lucide="x"></i>
+                <button id="close-settings-btn" class="icon-btn close-btn" aria-label="Close settings">
+                    <i data-lucide="x" aria-hidden="true"></i>
                 </button>
             </div>
 
             <p>Model</p>
             <div class="download-container">
-                <select id="model-selection"></select>
-                <button id="download" title="Download Model">
-                    <i data-lucide="download"></i>
+                <select id="model-selection" aria-label="Select AI model"></select>
+                <button id="download" title="Download Model" aria-label="Download selected model">
+                    <i data-lucide="download" aria-hidden="true"></i>
                 </button>
             </div>
             <input type="file" id="model-file-input" accept=".bin,.task,.litertlm,.lmrt" hidden />
@@ -107,18 +111,19 @@
                 <p class="brain-hint">Supported: PDF, TXT, MD, CSV, JSON</p>
             </div>
         </div>
-        <div id="chat-box" class="chat-box"></div>
-        <div id="chat-stats" class="chat-stats hidden"></div>
-        <div class="chat-input-container">
-            <button id="mic-btn" class="icon-btn mic-btn" title="Voice Mode">
+        <div id="chat-box" class="chat-box" role="log" aria-live="polite" aria-label="Chat messages"></div>
+        <div id="chat-stats" class="chat-stats hidden" aria-hidden="true"></div>
+        <div class="chat-input-container" role="form">
+            <button id="mic-btn" class="icon-btn mic-btn" title="Voice Mode" aria-label="Toggle voice input">
                 <i data-lucide="mic"></i>
             </button>
-            <input type="text" id="user-input" placeholder="Type a message..." />
-            <button id="send" disabled title="Send Message">
+            <input type="text" id="user-input" placeholder="Type a message..." aria-label="Chat message input"
+                autocomplete="off" />
+            <button id="send" disabled title="Send Message" aria-label="Send message">
                 <i data-lucide="arrow-up"></i>
             </button>
         </div>
-    </div>
+    </main>
 
     <script type="module" src="/src/main.js"></script>
 </body>

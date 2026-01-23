@@ -2,18 +2,46 @@
 // Uses main thread for embeddings (works around Vite worker bundling issues)
 // Database operations still use IndexedDB for persistence
 
-import { pipeline, env } from '@xenova/transformers';
-import { Voy } from 'voy-search';
+// LAZY IMPORTS: These heavy libraries are loaded on-demand, not at page load
+// This breaks the critical chain and reduces initial load time
+let pipeline = null;
+let env = null;
+let Voy = null;
+let pdfjsLib = null;
+
+// Lazy load transformers.js (1.3MB) - only when brain initializes
+async function ensureTransformers() {
+    if (pipeline) return;
+
+    const transformers = await import('@xenova/transformers');
+    pipeline = transformers.pipeline;
+    env = transformers.env;
+
+    // Configure transformers.js
+    env.allowLocalModels = false;
+    env.useBrowserCache = true;
+}
+
+// Lazy load voy-search
+async function ensureVoy() {
+    if (Voy) return;
+    const voyModule = await import('voy-search');
+    Voy = voyModule.Voy;
+}
+
+// Lazy load pdfjs-dist (700KB) - only when processing PDFs
+async function ensurePdfJs() {
+    if (pdfjsLib) return pdfjsLib;
+
+    pdfjsLib = await import('pdfjs-dist');
+    const pdfjsWorker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker.default;
+
+    return pdfjsLib;
+}
+
+// Dexie is small (~90KB) so keep it eager for database operations
 import Dexie from 'dexie';
-import * as pdfjsLib from 'pdfjs-dist';
-
-// Configure PDF.js worker - use bundled worker from node_modules
-import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
-
-// Configure transformers.js
-env.allowLocalModels = false;
-env.useBrowserCache = true;
 
 export class BrainService {
     constructor() {
@@ -90,10 +118,13 @@ export class BrainService {
     }
 
     /**
-     * Load embedding model
+     * Load embedding model (lazy loads transformers.js)
      */
     async _loadEmbedder() {
         console.log('[Brain] Loading embedding model...');
+
+        // Lazy load transformers.js on first use
+        await ensureTransformers();
 
         this.embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
             progress_callback: (progress) => {
@@ -156,6 +187,8 @@ export class BrainService {
                 console.log(`[Brain] Re-embedded ${needsReEmbed} memories (cached for future)`);
             }
 
+            // Lazy load Voy
+            await ensureVoy();
             this.voyIndex = new Voy({ embeddings: articles });
         } else {
             // Don't create empty Voy index - it causes errors
@@ -220,6 +253,8 @@ export class BrainService {
             });
         }
 
+        // Ensure Voy is loaded
+        await ensureVoy();
         this.voyIndex = new Voy({ embeddings: articles });
 
         this.memoryCount = await this.db.memories.count();
@@ -343,11 +378,14 @@ export class BrainService {
     }
 
     /**
-     * Extract text from PDF file
+     * Extract text from PDF file (lazy loads pdfjs)
      */
     async extractPdfText(file) {
+        // Lazy load pdfjs-dist on first use
+        const pdfjs = await ensurePdfJs();
+
         const arrayBuffer = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
 
         let fullText = '';
         for (let i = 1; i <= pdf.numPages; i++) {

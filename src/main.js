@@ -1,14 +1,73 @@
 import { FilesetResolver, LlmInference } from '@mediapipe/tasks-genai';
 import { registerSW } from 'virtual:pwa-register';
-import { createIcons, Settings, Download, ArrowUp, Brain, ChevronDown, Trash2, Star, Package, FolderOpen, Mic, MicOff, BrainCircuit, Upload, X } from 'lucide';
+import { createIcons, Settings, Download, ArrowUp, Brain, ChevronDown, Trash2, Mic, MicOff, BrainCircuit, Upload, X } from 'lucide';
 import { VoiceService } from './services/voice';
 import { BrainService } from './services/brain';
 import { marked } from 'marked';
-import hljs from 'highlight.js';
-import katex from 'katex';
 
-import 'highlight.js/styles/github-dark.css';
-import 'katex/dist/katex.min.css';
+// Lazy-loaded heavy dependencies (loaded on first use to reduce initial bundle)
+let hljs = null;
+let katex = null;
+let hljsLoaded = false;
+let katexLoaded = false;
+
+// Lazy load highlight.js with only common languages
+async function ensureHighlightJs() {
+  if (hljsLoaded) return hljs;
+
+  try {
+    const [hljsCore, jsLang, pyLang, cssLang, jsonLang, bashLang, tsLang, xmlLang, _css] = await Promise.all([
+      import('highlight.js/lib/core'),
+      import('highlight.js/lib/languages/javascript'),
+      import('highlight.js/lib/languages/python'),
+      import('highlight.js/lib/languages/css'),
+      import('highlight.js/lib/languages/json'),
+      import('highlight.js/lib/languages/bash'),
+      import('highlight.js/lib/languages/typescript'),
+      import('highlight.js/lib/languages/xml'),
+      import('highlight.js/styles/github-dark.css')
+    ]);
+
+    hljs = hljsCore.default;
+    hljs.registerLanguage('javascript', jsLang.default);
+    hljs.registerLanguage('js', jsLang.default);
+    hljs.registerLanguage('python', pyLang.default);
+    hljs.registerLanguage('py', pyLang.default);
+    hljs.registerLanguage('css', cssLang.default);
+    hljs.registerLanguage('json', jsonLang.default);
+    hljs.registerLanguage('bash', bashLang.default);
+    hljs.registerLanguage('shell', bashLang.default);
+    hljs.registerLanguage('typescript', tsLang.default);
+    hljs.registerLanguage('ts', tsLang.default);
+    hljs.registerLanguage('xml', xmlLang.default);
+    hljs.registerLanguage('html', xmlLang.default);
+
+    hljsLoaded = true;
+    return hljs;
+  } catch (err) {
+    console.warn('Failed to load highlight.js:', err);
+    return null;
+  }
+}
+
+// Lazy load KaTeX
+async function ensureKatex() {
+  if (katexLoaded) return katex;
+
+  try {
+    const [katexModule, _css] = await Promise.all([
+      import('katex'),
+      import('katex/dist/katex.min.css')
+    ]);
+    katex = katexModule.default;
+    katexLoaded = true;
+    return katex;
+  } catch (err) {
+    console.warn('Failed to load KaTeX:', err);
+    return null;
+  }
+}
+
 import './style.css';
 
 // Cache DOM elements for performance
@@ -134,7 +193,7 @@ function initDOMCache() {
   $brainFileInput = document.getElementById('brain-file-input');
 }
 
-// Initialize Lucide icons
+// Initialize Lucide icons (removed unused: Star, Package, FolderOpen)
 function initIcons() {
   createIcons({
     icons: {
@@ -144,9 +203,6 @@ function initIcons() {
       Brain,
       ChevronDown,
       Trash2,
-      Star,
-      Package,
-      FolderOpen,
       Mic,
       MicOff,
       BrainCircuit,
@@ -189,31 +245,47 @@ marked.setOptions({
   gfm: true
 });
 
-// Custom renderer for syntax highlighting
-const renderer = new marked.Renderer();
-renderer.code = function (code, language) {
-  const validLang = language && hljs.getLanguage(language);
-  const highlighted = validLang
-    ? hljs.highlight(code, { language }).value
-    : hljs.highlightAuto(code).value;
-  return `<pre><code class="hljs ${language || ''}">${highlighted}</code></pre>`;
-};
-marked.use({ renderer });
+// Custom renderer for syntax highlighting (uses lazy-loaded hljs)
+let rendererConfigured = false;
+function configureRenderer() {
+  if (rendererConfigured) return;
 
-// Render math expressions using KaTeX
-function renderMath(text) {
+  const renderer = new marked.Renderer();
+  renderer.code = function (code, language) {
+    // hljs will be loaded by now when this is called
+    if (hljs) {
+      const validLang = language && hljs.getLanguage(language);
+      const highlighted = validLang
+        ? hljs.highlight(code, { language }).value
+        : hljs.highlightAuto(code).value;
+      return `<pre><code class="hljs ${language || ''}">${highlighted}</code></pre>`;
+    }
+    // Fallback without highlighting
+    return `<pre><code>${code.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>`;
+  };
+  marked.use({ renderer });
+  rendererConfigured = true;
+}
+
+// Render math expressions using KaTeX (async)
+async function renderMath(text) {
   if (!text) return text;
+
+  // Quick check - if no $ signs, no math to render
+  if (!text.includes('$')) return text;
+
+  const k = await ensureKatex();
+  if (!k) return text; // Fallback: return original text if KaTeX fails to load
 
   // Block math: $$...$$ (handle multiline)
   text = text.replace(/\$\$([\s\S]+?)\$\$/g, (match, math) => {
     try {
-      return katex.renderToString(math.trim(), {
+      return k.renderToString(math.trim(), {
         displayMode: true,
         throwOnError: false,
         strict: false
       });
     } catch (e) {
-      console.warn('KaTeX block error:', e);
       return `<pre class="math-error">${match}</pre>`;
     }
   });
@@ -221,13 +293,12 @@ function renderMath(text) {
   // Inline math: $...$ (avoid matching currency like $100)
   text = text.replace(/(?<!\\)\$(?!\d)([^$\n]+?)(?<!\\)\$/g, (match, math) => {
     try {
-      return katex.renderToString(math.trim(), {
+      return k.renderToString(math.trim(), {
         displayMode: false,
         throwOnError: false,
         strict: false
       });
     } catch (e) {
-      console.warn('KaTeX inline error:', e);
       return match;
     }
   });
@@ -235,11 +306,19 @@ function renderMath(text) {
   return text;
 }
 
-// Render markdown with math support
-function renderMarkdown(text) {
+// Render markdown with math support (async for lazy loading)
+async function renderMarkdown(text) {
   if (!text) return '';
   try {
-    const withMath = renderMath(text);
+    // Load highlight.js if text contains code blocks (```)
+    if (text.includes('```')) {
+      await ensureHighlightJs();
+      configureRenderer();
+    } else if (!rendererConfigured) {
+      configureRenderer();
+    }
+
+    const withMath = await renderMath(text);
     return marked.parse(withMath);
   } catch (e) {
     console.error('Markdown render error:', e);
@@ -770,6 +849,22 @@ function onMessageSend() {
   // Add placeholder for assistant
   appendMessage({ content: 'typing...', role: 'assistant' });
 
+  // Start streaming speech if voice response is enabled
+  const useStreamingSpeech = voiceService && !voiceService.isListening && voiceResponseEnabled;
+  if (useStreamingSpeech) {
+    voiceService.startStreamingSpeech();
+  }
+
+  // Handle streaming updates - also feed to voice service
+  const onStreamUpdate = (accumulatedText) => {
+    updateLastMessage(accumulatedText);
+
+    // Feed streaming text to voice service for real-time TTS
+    if (useStreamingSpeech) {
+      voiceService.updateStreamingText(accumulatedText);
+    }
+  };
+
   const onFinishGenerating = (finalMessage) => {
     updateLastMessage(finalMessage);
     isGenerating = false;
@@ -777,15 +872,15 @@ function onMessageSend() {
     $userInput.setAttribute('placeholder', 'Type a message...');
     $chatStats.classList.add('hidden');
 
-    // Read response if voice mode is active and setting enabled
-    if (voiceService && !voiceService.isListening && voiceResponseEnabled) {
-      voiceService.speak(finalMessage);
+    // Finalize streaming speech - speak any remaining text
+    if (useStreamingSpeech) {
+      voiceService.endStreamingSpeech(finalMessage);
     }
   };
 
   generateResponse(
     input,
-    updateLastMessage,
+    onStreamUpdate,
     onFinishGenerating,
     (err) => {
       console.error('Generation error:', err);
@@ -793,9 +888,14 @@ function onMessageSend() {
       isGenerating = false;
       $sendBtn.disabled = false;
       $userInput.setAttribute('placeholder', 'Type a message...');
+      // Stop any ongoing speech on error
+      if (useStreamingSpeech) {
+        voiceService.stopSpeaking();
+      }
     }
   );
 }
+
 
 function appendMessage(message) {
   const container = document.createElement('div');
@@ -867,13 +967,32 @@ function parseThinkingContent(content) {
 
 const debouncedScroll = debounce(scrollToBottom, 50);
 
-function updateLastMessage(content) {
+// Debounce rendering during streaming (render every 100ms instead of every token)
+let lastRenderTime = 0;
+let pendingRender = null;
+const RENDER_DEBOUNCE_MS = 100;
+
+async function updateLastMessage(content, forceRender = false) {
   const containers = $chatBox.querySelectorAll('.message-container.assistant');
   const lastContainer = containers[containers.length - 1];
   if (!lastContainer) return;
 
   const wrapper = lastContainer.querySelector('.thinking-wrapper');
   if (!wrapper) return;
+
+  // Debounce rendering during streaming to reduce CPU usage
+  const now = Date.now();
+  if (!forceRender && now - lastRenderTime < RENDER_DEBOUNCE_MS) {
+    // Schedule a pending render
+    if (pendingRender) clearTimeout(pendingRender);
+    pendingRender = setTimeout(() => updateLastMessage(content, true), RENDER_DEBOUNCE_MS);
+    return;
+  }
+  lastRenderTime = now;
+  if (pendingRender) {
+    clearTimeout(pendingRender);
+    pendingRender = null;
+  }
 
   const { thinkingContent, responseContent, isThinking, hasThinkTags } = parseThinkingContent(content);
 
@@ -922,13 +1041,15 @@ function updateLastMessage(content) {
     }
   }
 
-  // Show response content
+  // Show response content (async for lazy-loaded dependencies)
   if (responseContent || (!hasThinkTags && content && content !== 'typing...')) {
     if (indicator) indicator.style.display = 'none';
     responseDiv.style.display = 'block';
     const displayContent = hasThinkTags ? responseContent : content;
     if (displayContent) {
-      responseDiv.innerHTML = renderMarkdown(displayContent);
+      // Async rendering with lazy-loaded KaTeX/highlight.js
+      const rendered = await renderMarkdown(displayContent);
+      responseDiv.innerHTML = rendered;
     }
   } else if (isThinking) {
     responseDiv.style.display = 'none';

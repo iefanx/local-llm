@@ -14,6 +14,36 @@ export default defineConfig({
         format: 'es',
         plugins: () => [wasm(), topLevelAwait()]
     },
+    // Production build optimizations
+    build: {
+        // Target modern browsers only (reduces polyfills)
+        target: 'esnext',
+        // Manual chunk splitting for better caching
+        rollupOptions: {
+            output: {
+                manualChunks: {
+                    // Core AI/ML libraries (large, rarely change)
+                    'vendor-mediapipe': ['@mediapipe/tasks-genai'],
+                    'vendor-transformers': ['@xenova/transformers'],
+                    'vendor-search': ['voy-search'],
+                    // PDF processing
+                    'vendor-pdf': ['pdfjs-dist'],
+                    // Formatting libraries (lazy loaded)
+                    'vendor-highlight': ['highlight.js'],
+                    'vendor-katex': ['katex'],
+                    'vendor-markdown': ['marked'],
+                    // Database
+                    'vendor-dexie': ['dexie'],
+                }
+            }
+        },
+        // Increase chunk size warning limit (ML libraries are large)
+        chunkSizeWarningLimit: 1000,
+    },
+    // Drop console.log in production builds
+    esbuild: {
+        drop: process.env.NODE_ENV === 'production' ? ['console', 'debugger'] : [],
+    },
     plugins: [
         wasm(),
         topLevelAwait(),
@@ -130,3 +160,4 @@ export default defineConfig({
         })
     ]
 })
+
